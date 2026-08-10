@@ -1,0 +1,152 @@
+# Case study: integrated 6-bus electricity / 3-node district heating system.
+# Reconstructed from Mitridati & Taylor (PSCC 2018), Fig. 2 and Section IV-A.
+# NOTE: these are plausible reconstructed values, NOT the paper's data.
+# Every choice is justified in NOTES.md. They get replaced by the authors'
+# online appendix data in Phase 7.
+
+# ---------------------------------------------------------------- constants
+constants:
+  rho: 963.0          # water density                       [kg/m3]
+  c: 4.182e-3         # specific heat capacity              [MJ/(kg.K)]  -> Q[MW] = c*mf*dT
+  dt: 3600.0          # length of one time step             [s]
+  Pa_to_MW: 1.0e-6    # W -> MW, used in the pump equation (27)
+
+# ------------------------------------------------------- district heating
+# Supply direction: node "from" -> node "to". The return pipe of the same
+# pair runs "to" -> "from".
+#   node 1: heat station, extraction CHP
+#   node 2: heat station, heat pump
+#   node 3: heat exchanger station, the heat load
+dhnNodes:
+  - id: 1
+    TSmin: 343.0      # supply temperature bounds           [K]  (70 degC)
+    TSmax: 373.0      #                                          (100 degC)
+    TRmin: 313.0      # return temperature bounds           [K]  (40 degC)
+    TRmax: 333.0      #                                          (60 degC)
+    prSmin: 2.0e5     # supply pressure bounds              [Pa]
+    prSmax: 1.6e6
+    prRmin: 1.0e5     # return pressure bounds              [Pa]
+    prRmax: 8.0e5
+  - id: 2
+    TSmin: 343.0
+    TSmax: 373.0
+    TRmin: 313.0
+    TRmax: 333.0
+    prSmin: 2.0e5
+    prSmax: 1.6e6
+    prRmin: 1.0e5
+    prRmax: 8.0e5
+  - id: 3
+    TSmin: 343.0
+    TSmax: 373.0
+    TRmin: 313.0
+    TRmax: 333.0
+    prSmin: 2.0e5
+    prSmax: 1.6e6
+    prRmin: 1.0e5
+    prRmax: 8.0e5
+
+pipes:
+  - id: 1
+    from: 1           # CHP node -> load node
+    to: 3
+    R: 0.36           # inner radius                        [m]   (~DN700)
+    L: 11000.0        # length                              [m]   (~2 h travel time at nominal flow)
+    mu: 1.0           # heat transfer coefficient           [W/(m2.K)]
+    phi: 1.4          # pressure loss coefficient           [Pa/(kg/s)^2]
+    mfSmin: 20.0      # supply mass flow bounds             [kg/s]
+    mfSmax: 900.0
+    mfRmin: 20.0      # return mass flow bounds             [kg/s]
+    mfRmax: 900.0
+  - id: 2
+    from: 2           # HP node -> load node
+    to: 3
+    R: 0.30
+    L: 8000.0
+    mu: 1.0
+    phi: 2.0
+    mfSmin: 20.0
+    mfSmax: 700.0
+    mfRmin: 20.0
+    mfRmax: 700.0
+
+# Heat stations: heat producers. Each sits at a DHN node and at an electricity bus.
+heatStations:
+  - id: CHP1
+    type: chp         # extraction CHP, Eqs. (28)-(29)
+    dhnNode: 1
+    bus: 2
+    Qmax: 120.0       # maximum heat output                 [MW]
+    mfmin: 0.0        # mass flow through the station       [kg/s]
+    mfmax: 900.0
+    etaPump: 0.8      # water pump efficiency, Eq. (27)     [-]
+  - id: HP1
+    type: hp          # heat pump, Eq. (30)
+    dhnNode: 2
+    bus: 5
+    Qmax: 60.0
+    mfmin: 0.0
+    mfmax: 700.0
+    etaPump: 0.8
+
+# Heat exchanger stations: the heat loads, Eqs. (21)-(23).
+heatExchangerStations:
+  - id: HES1
+    dhnNode: 3
+    mfmin: 0.0
+    mfmax: 1600.0
+    dprmin: 1.0e5     # minimum supply-return pressure difference [Pa]
+
+# ------------------------------------------------------------ electricity
+# 6-bus system. Bus 1 is the reference bus.
+buses: [1, 2, 3, 4, 5, 6]
+referenceBus: 1
+
+lines:                # B in [MW/rad], fmax in [MW]
+  - {from: 1, to: 2, B: 100.0, fmax: 150.0}
+  - {from: 1, to: 4, B: 100.0, fmax: 150.0}
+  - {from: 2, to: 3, B: 100.0, fmax: 150.0}
+  - {from: 2, to: 5, B: 100.0, fmax: 150.0}
+  - {from: 3, to: 6, B: 100.0, fmax: 150.0}
+  - {from: 4, to: 5, B: 100.0, fmax: 150.0}
+  - {from: 5, to: 6, B: 100.0, fmax: 150.0}
+
+# Electricity producers. The CHP is listed here too: it appears in both
+# I_E (it produces power) and I_HS (it produces heat).
+electricityGenerators:
+  - id: G1
+    bus: 1
+    Pmax: 150.0       # maximum power output                [MW]
+    cost: 30.0        # marginal cost                       [$/MWh]
+  - id: W1
+    bus: 4
+    Pmax: 100.0       # installed wind capacity, derated hourly by the availability factor
+    cost: 0.0
+  - id: CHP1
+    bus: 2
+    Pmax: 100.0
+    cost: 0.0         # priced through the fuel cost below, Eq. (34)
+
+# Extraction CHP characteristics, Eqs. (28), (29), (34).
+# fuelE / fuelH are the coefficients that multiply P and Q inside the fuel
+# constraint, i.e. fuel-per-unit-output = 1/efficiency. See NOTES.md.
+chpUnits:
+  - id: CHP1
+    r: 0.15           # minimum power-to-heat ratio, Eq. (28)     [-]
+    fuelE: 2.857      # 1 / 0.35 electric efficiency              [MWh_fuel/MWh_e]
+    fuelH: 2.222      # 1 / 0.45 heat efficiency                  [MWh_fuel/MWh_th]
+    Fmax: 500.0       # maximum fuel consumption                  [MW_fuel]
+    fuelCost: 12.0    # marginal fuel cost, alpha in Eq. (34)     [$/MWh_fuel]
+
+# Heat pump, Eq. (30). COP is time-varying, see timeseries.csv.
+heatPumps:
+  - id: HP1
+    bus: 5
+    LHPmax: 25.0      # maximum electricity consumption           [MW]
+
+# Which bus each electricity load sits at. The hourly profile in
+# timeseries.csv is split over these buses using the given shares.
+electricityLoads:
+  - {bus: 3, share: 0.35}
+  - {bus: 4, share: 0.30}
+  - {bus: 6, share: 0.35}
