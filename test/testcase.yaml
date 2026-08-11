@@ -6,7 +6,7 @@ constants:
   rho: 963.0
   c: 4.182e-3
   dt: 3600.0
-  Pa_to_MW: 1.0e-6
+  pressure_to_MW: 1.0e-6
 
 dhnNodes:
   - {id: 1, TSmin: 343.0, TSmax: 373.0, TRmin: 313.0, TRmax: 333.0, prSmin: 2.0e5, prSmax: 1.6e6, prRmin: 1.0e5, prRmax: 8.0e5}

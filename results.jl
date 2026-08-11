@@ -77,7 +77,7 @@ function check_mccormick(m::Model)
     res["Eq. (24) HS heat [MW]"] = maximum(abs(Q[j, t] - c * mfHS[j, t] *
         (TS[p[:HSnode][j], t] - TR[p[:HSnode][j], t])) for j in IHS, t in T)
 
-    res["Eq. (27) pump [MW]"] = maximum(abs(Lpump[j, t] - p[:Pa_to_MW] / (rho * p[:etaPump][j]) *
+    res["Eq. (27) pump [MW]"] = maximum(abs(Lpump[j, t] - p[:pressure_to_MW] / (rho * p[:etaPump][j]) *
         mfHS[j, t] * (prS[p[:HSnode][j], t] - prR[p[:HSnode][j], t])) for j in IHS, t in T)
 
     res["Eq. (16) mixing [kg.K/s]"] = isempty(INmixS) ? 0.0 :

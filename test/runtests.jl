@@ -43,35 +43,30 @@ silent(; nonconvex=false) = nonconvex ? nonconvex_solver() : convex_solver()
 end
 
 @testset "Two-node network against the analytic optimum" begin
-    # Geometry: node 1 (CHP) --pipe--> node 2 (heat load). One time step, so
-    # the outlet temperature is just the inlet times (1 - gamma).
+    # Geometry: node 1 (CHP) --pipe--> node 2 (heat load), one time step.
     #
-    # Mass balance forces a single flow mf through everything, and Eqs. (19),
-    # (20) give TS2 = TS1*(1-g) and TR1 = TR2*(1-g). Then
-    #     LH = c*mf*(TS2 - TR2) = c*mf*(TS1*(1-g) - TR2)
-    #     Q  = c*mf*(TS1 - TR1) = c*mf*(TS1 - TR2*(1-g))
-    # so, eliminating mf,
-    #     Q = LH * (TS1 - TR2*(1-g)) / (TS1*(1-g) - TR2).
-    # dQ/dTS1 < 0 and dQ/dTR2 > 0, so the cheapest dispatch wants the supply
-    # temperature as high and the return temperature as low as possible.
+    # With the delays switched off the time delay is zero, and the loss bracket
+    # of Eq. (5) is multiplied by that delay, so there is no thermal loss:
+    # TS2 = TS1 and TR1 = TR2. Then
+    #     LH = c*mf*(TS2 - TR2) = c*mf*(TS1 - TR2)
+    #     Q  = c*mf*(TS1 - TR1) = c*mf*(TS1 - TR2)
+    # so Q = LH exactly - whatever the CHP puts in arrives at the load - and
+    # the only freedom left is how much water to move. Cost is increasing in
+    # the pump load, hence in mf, so the optimum takes the widest temperature
+    # difference the bounds allow: TS1 at its ceiling, TR2 at its floor.
     #
-    # TS1 does reach its own upper bound. TR2 does not reach its lower bound,
-    # and that is the interesting part: the bound that actually binds is the
-    # one on TR1 at the other end of the pipe. The water arrives at the heat
-    # station already cooled, TR1 = TR2*(1-g), so pushing TR2 down to 313 K
-    # would put TR1 below the 313 K floor that Eq. (18) imposes there. The
-    # binding constraint is therefore TR1 = TRmin, i.e. TR2 = TRmin/(1-g).
+    # (An earlier version of this test carried a loss term and expected
+    # Q > LH. That was wrong; see NOTES.md section 4.)
     data = YAML.load_file(joinpath(@__DIR__, "testcase.yaml"))
     ts = CSV.read(joinpath(@__DIR__, "timeseries.csv"), DataFrame)
 
-    g = 2 * 1.0 * 3600.0 / (963.0 * 4182.0 * 0.30)   # gamma of the pipe
     c = 4.182e-3
     LH = 100.0
     TS1 = 373.0                # upper bound of the supply temperature
-    TR1 = 313.0                # lower bound of the return temperature, binding
-    TR2 = TR1 / (1 - g)        # what that implies at the load end
-    mf_exp = LH / (c * (TS1 * (1 - g) - TR2))
-    Q_exp = c * mf_exp * (TS1 - TR1)
+    TR1 = 313.0                # lower bound of the return temperature
+    TR2 = TR1                  # no loss, so the two ends agree
+    mf_exp = LH / (c * (TS1 - TR2))
+    Q_exp = LH
 
     # Only the original model has to reproduce this. The relaxation is checked
     # separately, below - a relaxation is not supposed to land on the exact
@@ -94,9 +89,11 @@ end
     @test mfS[1, 1] ≈ mf_exp rtol = 1e-4
     @test Q["CHP1", 1] ≈ Q_exp rtol = 1e-4
 
-    # The loss identity Q - LH = c*mf*gamma*(TS1 + TR2), derived by hand from
-    # the same three equations.
-    @test Q["CHP1", 1] - LH ≈ c * mfS[1, 1] * g * (TS[1, 1] + TR[2, 1]) rtol = 1e-6
+    # With no delay there are no losses, so production must equal the load.
+    @test Q["CHP1", 1] ≈ LH rtol = 1e-9
+
+    # And the heat equation must hold on the recovered numbers.
+    @test Q["CHP1", 1] ≈ c * mfS[1, 1] * (TS[1, 1] - TR[1, 1]) rtol = 1e-6
 
     println("  Section II: mf = $(round(mfS[1,1], digits=3)) kg/s (expected $(round(mf_exp, digits=3))),",
             " Q = $(round(Q["CHP1",1], digits=3)) MW (expected $(round(Q_exp, digits=3)))")

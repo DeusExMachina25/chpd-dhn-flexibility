@@ -72,9 +72,10 @@ function build_chpd_misocp!(m::Model; delays::Bool=false)
     Q = m.ext[:variables][:Q]
     Lpump = m.ext[:variables][:Lpump]
 
-    # Bounds of the pipe outlet temperatures, needed by the envelopes
-    TSoutlo = p[:TSlo] * (1 - maximum(values(gamma))); TSouthi = p[:TShi]
-    TRoutlo = p[:TRlo] * (1 - maximum(values(gamma))); TRouthi = p[:TRhi]
+    # Bounds of the pipe outlet temperatures, needed by the envelopes. These
+    # are set by build_chpd_minlp!, which knows whether delays are on.
+    TSoutlo = p[:TSoutlo]; TSouthi = p[:TShi]
+    TRoutlo = p[:TRoutlo]; TRouthi = p[:TRhi]
 
     ## Eq. (2) -> Eq. (36): convex quadratic relaxation of the pressure loss.
     # Written with the square on the small side so that the constraint is
@@ -135,7 +136,7 @@ function build_chpd_misocp!(m::Model; delays::Bool=false)
                    lower_bound(dprHS[j, t]), upper_bound(dprHS[j, t]))
     end
     m.ext[:constraints][:eq27mc] = @constraint(m, [j=IHS, t=T],
-        Lpump[j, t] == p[:Pa_to_MW] / (rho * p[:etaPump][j]) * wPump[j, t])
+        Lpump[j, t] == p[:pressure_to_MW] / (rho * p[:etaPump][j]) * wPump[j, t])
 
     ## Eqs. (16)-(17) -> McCormick. Two families of products per mixing node:
     # the nodal temperature times each arriving flow, and each arriving flow

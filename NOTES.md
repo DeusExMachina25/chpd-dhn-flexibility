@@ -266,3 +266,116 @@ cannot be reproduced or expected here. Reproducing it is Phase 7.
   `TR1` at the *far* end of the pipe that binds first, giving
   `TR2 = TRmin/(1-g) = 314.876 K`. The derivation was corrected, not the code.
 - The relaxation bounds the original from below on the test network too.
+
+---
+
+## 6. Phase 7: the authors' own data
+
+`appendix/` holds the online appendix (Zenodo doi:10.5281/zenodo.1195508, MD5
+`a7388358c72b622a3397f99a620f8403`, verified) and their reference Python
+implementation. `data/network.yaml` and `data/timeseries.csv` are now built
+from those, replacing the reconstruction of section 2.
+
+### Provenance
+
+Everything comes from `step 1.a initialization MILP MINI 3.py`, which is the
+only complete and self-consistent source: the appendix PDF gives the tables but
+its column order is ambiguous once the PDF is de-laid-out, and the load and
+wind profiles appear there only as figures.
+
+Topology, which differs from the reconstruction: the DHN nodes and the
+electricity buses are the **same** six nodes, and the heating network is a
+**line**, not a Y:
+
+```
+ node 1 (HP1, W1) --pipe 1--> node 2 (CHP1, G2) --pipe 2--> node 3 (HES1, load)
+```
+
+G1 sits at bus 6. Lines: 1-2, 2-3, 3-6, 6-5, 5-4, 4-1, 3-5.
+
+A consequence worth stating: **every node has at most one arriving pipe**, so
+Eqs. (19)/(20) apply everywhere and the bilinear mixing equations (16)/(17) are
+never needed. The McCormick envelopes for them are still implemented and still
+correct, they simply have nothing to relax on this network. Only (21), (24) and
+(27) are actually relaxed.
+
+Key parameters: pipes R = 0.8 m, L = 500 m, mu = 20 W/(m2K), mf 50-300 kg/s;
+supply 90-120 degC, return 30-60 degC; rho = 1000 kg/m3; the heat coefficient
+is their `1e-6 * 1.1704 * 3600 = 4.21344e-3`, i.e. water at 4213 J/(kg.K).
+CHP1: r = 0.6, rho_E = 2.4, rho_H = 0.25, Fmax = 250 MW, 12.5 $/MWh_fuel,
+Qmax = 100 MW. HP1: COP 2.5, Qmax 150 MW. G1 180 MW at 11 $/MWh, G2 100 MW at
+33 $/MWh, W1 500 MW at 0.0001 $/MWh. Loads split 20/40/40 over buses 3, 4, 5.
+
+### Where the appendix PDF and their code disagree
+
+The PDF is the published record, the code is what actually produces numbers.
+The code was followed, and these were noted rather than silently reconciled:
+
+| | appendix PDF | their code |
+|---|---|---|
+| pressure bounds | 0-100 kPa | 50-5000 kPa |
+| minimum HES flow | 50 kg/s | 150 kg/s |
+| water density | 988 kg/m3 | 1000 kg/m3 |
+| units present | G1, W1, CHP1, HP1 | also G2 and a heat-only HO1 |
+
+HO1 is omitted here because their own data sets its maximum heat output to
+zero, so it can never produce anything.
+
+Their objective also carries two numerical devices that are not in the paper:
+elastic mass balance slacks penalised at 1000, and a 1e-5 regularisation on the
+time delays. Neither is reproduced here; our mass balances are hard equalities
+and close at machine precision without help.
+
+### Two real bugs the authors' data exposed
+
+**1. Eq. (5) was charging thermal loss at zero delay.** The loss bracket in (5)
+is `(1 - 2*mu*tau*dt/(rho*c*R))` and it is multiplied by the delay `tau`. At
+`tau = 0` the bracket is exactly 1, so a pipe crossed within one time step
+loses nothing. The code instead applied a full step of loss. On the
+reconstruction this merely inflated the losses; on the authors' data it made
+the model **infeasible**, and the infeasibility is what exposed it: their pipes
+lose 4.27 % of the *absolute* temperature per step, so two in series drop a
+393.15 K supply to 360.3 K, below the 363.15 K floor of Eq. (18). Fixed to
+`TSout = TSin`. All the "pipe losses" reported in section 5 were an artefact of
+this and are withdrawn.
+
+Losing exactly nothing across a real pipe is of course not physical. It is an
+artefact of discretising the delay into whole time steps, and it is what the
+paper's Eq. (5) says. Worth a paragraph in the report's critical reflection,
+together with the fact that the loss is proportional to the *absolute*
+temperature, which implicitly places the ambient at 0 K.
+
+**2. The zero-delay assumption needed a consistency bound.** Asserting
+`tau = 0` is only legitimate if Eq. (6) would actually return 0, i.e. if a
+whole pipe volume is pushed through within one step: `mf*dt >= rho*pi*R^2*L`.
+For these pipes that is `mf >= 279.25 kg/s` against a bound of 50-300. Without
+it the no-delay model quietly allows flows that could not possibly clear the
+pipe in one step. The bound is now imposed whenever delays are off.
+
+Two smaller things found in the same pass: `gamma` was computed with a
+hard-coded `4182.0` instead of the `c` in the data file (harmless then, wrong
+the moment the data changed), and `Pa_to_MW` was renamed `pressure_to_MW`
+because the authors' pressures are in kPa, not Pa.
+
+### Results on the authors' data, delays still off
+
+| model | 24 h objective |
+|---|---|
+| Section IV-A, CED | **19276.98 $** |
+| Section II, original | 21041.73 $ |
+| Section III-B, relaxed | 20749.78 $ (gap 1.39 %) |
+
+**The CED reproduces the paper's 19277 $ exactly.** That is the strongest
+evidence so far that the data, the units, the network and the CED formulation
+are all right, since it is a single number that depends on nearly all of them.
+
+The CHPD at 21041.73 $ does not yet match the paper's 18600 $, and should not:
+with the delays off there is no pipeline storage, so the model has no
+flexibility to exploit and simply pays for water pumping on top of the CED. The
+24-hour problem is currently 24 independent single-period problems. Closing
+that gap is what implementing Eqs. (6)-(13) is for.
+
+The relaxation gap is now only 1.39 %, against 23 % on the reconstruction. The
+reason is the flow bound above: it pins the pipe flows into 279-300 kg/s, and
+McCormick tightness is driven by exactly that width. Eq. (36) is tight to
+within 3.3 Pa.

@@ -8,7 +8,8 @@
 #   - Section III-B the convex relaxation (McCormick + convex quadratic)
 #   - Section IV-A  the conventional economic dispatch, as a benchmark
 #
-# Run with:  julia --project=. chpd.jl
+# Run with:  julia --project=. chpd.jl        (one time step)
+#            julia --project=. chpd.jl 3      (the first three time steps)
 
 ## Step 0: Activate environment - ensure consistency across computers
 using Pkg
@@ -28,7 +29,9 @@ println("Data loaded: $(length(data["dhnNodes"]))-node DHN, $(length(data["buses
 using JuMP
 
 # One time step to start with, no pipeline time delays. See NOTES.md.
-NSTEPS = 1
+# Pass a number on the command line to run more steps.
+NSTEPS = isempty(ARGS) ? 1 : parse(Int, ARGS[1])
+println("Horizon: $NSTEPS time step$(NSTEPS == 1 ? "" : "s")")
 
 include(joinpath(@__DIR__, "solvers.jl"))
 include(joinpath(@__DIR__, "init_model.jl"))
@@ -62,7 +65,7 @@ optimize!(m_minlp);  report_status(m_minlp, "Section II (MINLP)")
 optimize!(m_misocp); report_status(m_misocp, "Section III-B (relaxed)")
 
 ## Step 5: validation
-println("\n================ validation of the one-step case ================")
+println("\n================ validation over $NSTEPS time step$(NSTEPS == 1 ? "" : "s") ================")
 check_lower_bound(m_misocp, m_minlp)
 report_envelope_widths(m_misocp)
 check_eq36(m_misocp)

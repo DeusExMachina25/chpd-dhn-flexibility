@@ -112,7 +112,7 @@ function process_parameters!(m::Model, data::Dict)
     p[:rho] = cst["rho"]
     p[:c] = cst["c"]                # [MJ/(kg.K)], so Q[MW] = c * mf * dT
     p[:dt] = cst["dt"]              # [s]
-    p[:Pa_to_MW] = cst["Pa_to_MW"]
+    p[:pressure_to_MW] = cst["pressure_to_MW"]
 
     # DHN nodes: temperature and pressure bounds, Eqs. (15) and (18)
     nodes = Dict(n["id"] => n for n in data["dhnNodes"])
@@ -131,7 +131,12 @@ function process_parameters!(m::Model, data::Dict)
     # Per-time-step thermal loss factor of a pipe, i.e. the bracket in Eq. (5)
     # evaluated for a travel time of sigma steps. gamma[p] is the loss for one
     # step of travel; the factor for sigma steps is (1 - sigma * gamma[p]).
-    p[:gamma] = Dict(pp => 2 * p[:mu][pp] * p[:dt] / (p[:rho] * 4182.0 * p[:R][pp]) for pp in IP)
+    # mu is in W/(m2.K) and dt in s, so c has to be in J/(kg.K) here. The yaml
+    # gives it in MJ/(kg.K) because the rest of the model works in MW, hence
+    # the 1e6. Deriving it rather than hard-coding 4182 keeps the two uses of
+    # c consistent when the data file changes.
+    c_SI = p[:c] * 1.0e6
+    p[:gamma] = Dict(pp => 2 * p[:mu][pp] * p[:dt] / (p[:rho] * c_SI * p[:R][pp]) for pp in IP)
 
     # Maximum time delay of a pipe, from the pipe volume and the minimum flow.
     # This is the tau-bar in Eq. (6); it is only used when delays are enabled.

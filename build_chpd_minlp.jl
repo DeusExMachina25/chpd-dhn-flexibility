@@ -65,11 +65,21 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     m.ext[:parameters][:TRlo] = TRlo; m.ext[:parameters][:TRhi] = TRhi
 
     ##### Create variables
-    # Mass flow rates in the pipes, bounded by Eq. (1)
+    # Mass flow rates in the pipes, bounded by Eq. (1).
+    #
+    # With the delays switched off we are asserting tau = 0, and Eq. (6) only
+    # allows that if a whole pipe volume is pushed through within one time
+    # step, i.e. mf*dt >= rho*pi*R^2*L. Without this the "no delay" assumption
+    # is not consistent with the model it came from. The bound is only applied
+    # in the no-delay case; with delays on, Eq. (6) handles it properly.
+    mffill = Dict(pp => p[:rho] * pi * p[:R][pp]^2 * p[:L][pp] / p[:dt] for pp in IP)
+    mfSlo = Dict(pp => delays ? p[:mfSmin][pp] : max(p[:mfSmin][pp], mffill[pp]) for pp in IP)
+    mfRlo = Dict(pp => delays ? p[:mfRmin][pp] : max(p[:mfRmin][pp], mffill[pp]) for pp in IP)
+
     mfS = m.ext[:variables][:mfS] = @variable(m, [pp=IP, t=T],
-        lower_bound=p[:mfSmin][pp], upper_bound=p[:mfSmax][pp], base_name="mfS")
+        lower_bound=mfSlo[pp], upper_bound=p[:mfSmax][pp], base_name="mfS")
     mfR = m.ext[:variables][:mfR] = @variable(m, [pp=IP, t=T],
-        lower_bound=p[:mfRmin][pp], upper_bound=p[:mfRmax][pp], base_name="mfR")
+        lower_bound=mfRlo[pp], upper_bound=p[:mfRmax][pp], base_name="mfR")
 
     # Nodal pressures, bounded by Eq. (15)
     prS = m.ext[:variables][:prS] = @variable(m, [n=IN, t=T],
@@ -86,12 +96,18 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     # Pipe inlet and outlet temperatures
     TSin = m.ext[:variables][:TSin] = @variable(m, [pp=IP, t=T],
         lower_bound=TSlo, upper_bound=TShi, base_name="TSin")
+    # An outlet is at most as hot as its inlet. With delays off there is no
+    # loss at all (see Eq. (5) below), so the inlet bounds carry over.
+    lossfactor = delays ? (1 - maximum(values(gamma)) * maximum(values(p[:taumax]))) : 1.0
+    TSoutlo = m.ext[:parameters][:TSoutlo] = TSlo * lossfactor
+    TRoutlo = m.ext[:parameters][:TRoutlo] = TRlo * lossfactor
+
     TSout = m.ext[:variables][:TSout] = @variable(m, [pp=IP, t=T],
-        lower_bound=TSlo * (1 - maximum(values(gamma))), upper_bound=TShi, base_name="TSout")
+        lower_bound=TSoutlo, upper_bound=TShi, base_name="TSout")
     TRin = m.ext[:variables][:TRin] = @variable(m, [pp=IP, t=T],
         lower_bound=TRlo, upper_bound=TRhi, base_name="TRin")
     TRout = m.ext[:variables][:TRout] = @variable(m, [pp=IP, t=T],
-        lower_bound=TRlo * (1 - maximum(values(gamma))), upper_bound=TRhi, base_name="TRout")
+        lower_bound=TRoutlo, upper_bound=TRhi, base_name="TRout")
 
     # Mass flow rates at the stations, bounded by Eqs. (26) and (22).
     #
@@ -153,12 +169,21 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     m.ext[:constraints][:eq3] = @constraint(m, [pp=IP, t=T], TSin[pp, t] == TS[pfrom[pp], t])
     m.ext[:constraints][:eq4] = @constraint(m, [pp=IP, t=T], TRin[pp, t] == TR[pto[pp], t])
 
-    # Eq. (5) with zero time delay - the water crosses the pipe within one time
-    # step and only loses heat. See NOTES.md for what this drops.
-    m.ext[:constraints][:eq5S] = @constraint(m, [pp=IP, t=T],
-        TSout[pp, t] == TSin[pp, t] * (1 - gamma[pp]))
-    m.ext[:constraints][:eq5R] = @constraint(m, [pp=IP, t=T],
-        TRout[pp, t] == TRin[pp, t] * (1 - gamma[pp]))
+    # Eq. (5) with zero time delay.
+    #
+    # The loss bracket in (5) is (1 - 2*mu*tau*dt/(rho*c*R)), and it is
+    # multiplied by the delay tau. At tau = 0 the bracket is exactly 1, so the
+    # water crosses the pipe within one time step and is charged NO thermal
+    # loss at all. An earlier version of this charged a full step of loss here,
+    # which is wrong and, on the paper's own data, infeasible: two pipes in
+    # series each lose 4.27 % of the absolute temperature, which drops a
+    # 393.15 K supply to 360.3 K, below the 363.15 K floor of Eq. (18).
+    #
+    # Losing nothing over a pipe is obviously not physical. It is an artefact
+    # of discretising the delay into whole time steps, and it is what the model
+    # in the paper says. See NOTES.md.
+    m.ext[:constraints][:eq5S] = @constraint(m, [pp=IP, t=T], TSout[pp, t] == TSin[pp, t])
+    m.ext[:constraints][:eq5R] = @constraint(m, [pp=IP, t=T], TRout[pp, t] == TRin[pp, t])
 
     # Eq. (14) - nodal mass balance. Supply: what arrives through the pipes and
     # what the heat stations inject equals what leaves through the pipes and
@@ -203,7 +228,7 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     # Eq. (27) - the water pump at a heat station works against the pressure
     # difference between the supply and the return network. Bilinear equality.
     m.ext[:constraints][:eq27] = @constraint(m, [j=IHS, t=T],
-        Lpump[j, t] == p[:Pa_to_MW] / (rho * p[:etaPump][j]) *
+        Lpump[j, t] == p[:pressure_to_MW] / (rho * p[:etaPump][j]) *
                        mfHS[j, t] * (prS[HSnode[j], t] - prR[HSnode[j], t]))
 
     # Eqs. (28)-(29) - feasible operating region of an extraction CHP.
