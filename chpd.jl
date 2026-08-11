@@ -26,11 +26,11 @@ println("Data loaded: $(length(data["dhnNodes"]))-node DHN, $(length(data["buses
 
 ## Step 2: create model & pass data to model
 using JuMP
-using Gurobi
 
 # One time step to start with, no pipeline time delays. See NOTES.md.
 NSTEPS = 1
 
+include(joinpath(@__DIR__, "solvers.jl"))
 include(joinpath(@__DIR__, "init_model.jl"))
 include(joinpath(@__DIR__, "build_chpd_minlp.jl"))
 include(joinpath(@__DIR__, "build_chpd_misocp.jl"))
@@ -46,14 +46,13 @@ function setup(optimizer; nsteps::Int=NSTEPS)
 end
 
 ## Step 3: build the models
-# Section II is non-convex, so Gurobi needs to be told to accept it.
-m_minlp = setup(optimizer_with_attributes(Gurobi.Optimizer, "NonConvex" => 2, "OutputFlag" => 0))
+m_minlp = setup(nonconvex_solver())
 build_chpd_minlp!(m_minlp)
 
-m_misocp = setup(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0))
+m_misocp = setup(convex_solver())
 build_chpd_misocp!(m_misocp)
 
-m_ced = setup(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0))
+m_ced = setup(lp_solver())
 build_ced!(m_ced)
 
 ## Step 4: solve
@@ -65,8 +64,15 @@ optimize!(m_misocp); report_status(m_misocp, "Section III-B (relaxed)")
 ## Step 5: validation
 println("\n================ validation of the one-step case ================")
 check_lower_bound(m_misocp, m_minlp)
+report_envelope_widths(m_misocp)
 check_eq36(m_misocp)
 check_mccormick(m_misocp)
+
+# The relaxed solution is a bound, not a dispatch. The Section II solution is
+# the one that has to make physical sense, so both get checked.
+println("\n>>> physical checks on the Section II solution (must all close)")
+check_physics(m_minlp)
+println("\n>>> the same checks on the relaxed solution (these are allowed to drift)")
 check_physics(m_misocp)
 
 println("\n--- CHPD versus CED ---")

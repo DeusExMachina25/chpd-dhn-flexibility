@@ -95,10 +95,14 @@ function build_chpd_misocp!(m::Model; delays::Bool=false)
         upper_bound=p[:TSmax][HESnode[i]] - p[:TRmin][HESnode[i]], base_name="dTHES")
     @constraint(m, [i=IHES, t=T], dTHES[i, t] == TS[HESnode[i], t] - TR[HESnode[i], t])
 
+    # The envelope is built on whatever bounds the variables actually carry,
+    # which are the tightened ones computed in build_chpd_minlp!, not the raw
+    # equipment limits from the data file.
     wHES = m.ext[:variables][:wHES] = @variable(m, [i=IHES, t=T], base_name="wHES")
     for i in IHES, t in T
         mccormick!(m, wHES[i, t], mfHES[i, t], dTHES[i, t],
-                   p[:mfHESmin][i], p[:mfHESmax][i], lower_bound(dTHES[i, t]), upper_bound(dTHES[i, t]))
+                   lower_bound(mfHES[i, t]), upper_bound(mfHES[i, t]),
+                   lower_bound(dTHES[i, t]), upper_bound(dTHES[i, t]))
     end
     m.ext[:constraints][:eq21mc] = @constraint(m, [i=IHES, t=T], LH[i, t] == c * wHES[i, t])
 
@@ -112,7 +116,8 @@ function build_chpd_misocp!(m::Model; delays::Bool=false)
     wHS = m.ext[:variables][:wHS] = @variable(m, [j=IHS, t=T], base_name="wHS")
     for j in IHS, t in T
         mccormick!(m, wHS[j, t], mfHS[j, t], dTHS[j, t],
-                   p[:mfHSmin][j], p[:mfHSmax][j], lower_bound(dTHS[j, t]), upper_bound(dTHS[j, t]))
+                   lower_bound(mfHS[j, t]), upper_bound(mfHS[j, t]),
+                   lower_bound(dTHS[j, t]), upper_bound(dTHS[j, t]))
     end
     m.ext[:constraints][:eq24mc] = @constraint(m, [j=IHS, t=T], Q[j, t] == c * wHS[j, t])
 
@@ -126,7 +131,8 @@ function build_chpd_misocp!(m::Model; delays::Bool=false)
     wPump = m.ext[:variables][:wPump] = @variable(m, [j=IHS, t=T], base_name="wPump")
     for j in IHS, t in T
         mccormick!(m, wPump[j, t], mfHS[j, t], dprHS[j, t],
-                   p[:mfHSmin][j], p[:mfHSmax][j], lower_bound(dprHS[j, t]), upper_bound(dprHS[j, t]))
+                   lower_bound(mfHS[j, t]), upper_bound(mfHS[j, t]),
+                   lower_bound(dprHS[j, t]), upper_bound(dprHS[j, t]))
     end
     m.ext[:constraints][:eq27mc] = @constraint(m, [j=IHS, t=T],
         Lpump[j, t] == p[:Pa_to_MW] / (rho * p[:etaPump][j]) * wPump[j, t])

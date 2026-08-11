@@ -19,28 +19,28 @@ constants:
 #   node 3: heat exchanger station, the heat load
 dhnNodes:
   - id: 1
-    TSmin: 343.0      # supply temperature bounds           [K]  (70 degC)
+    TSmin: 353.0      # supply temperature bounds           [K]  (80 degC)
     TSmax: 373.0      #                                          (100 degC)
     TRmin: 313.0      # return temperature bounds           [K]  (40 degC)
-    TRmax: 333.0      #                                          (60 degC)
+    TRmax: 323.0      #                                          (50 degC)
     prSmin: 2.0e5     # supply pressure bounds              [Pa]
     prSmax: 1.6e6
     prRmin: 1.0e5     # return pressure bounds              [Pa]
     prRmax: 8.0e5
   - id: 2
-    TSmin: 343.0
+    TSmin: 353.0
     TSmax: 373.0
     TRmin: 313.0
-    TRmax: 333.0
+    TRmax: 323.0
     prSmin: 2.0e5
     prSmax: 1.6e6
     prRmin: 1.0e5
     prRmax: 8.0e5
   - id: 3
-    TSmin: 343.0
+    TSmin: 353.0
     TSmax: 373.0
     TRmin: 313.0
-    TRmax: 333.0
+    TRmax: 323.0
     prSmin: 2.0e5
     prSmax: 1.6e6
     prRmin: 1.0e5
@@ -54,10 +54,10 @@ pipes:
     L: 11000.0        # length                              [m]   (~2 h travel time at nominal flow)
     mu: 1.0           # heat transfer coefficient           [W/(m2.K)]
     phi: 1.4          # pressure loss coefficient           [Pa/(kg/s)^2]
-    mfSmin: 20.0      # supply mass flow bounds             [kg/s]
-    mfSmax: 900.0
-    mfRmin: 20.0      # return mass flow bounds             [kg/s]
-    mfRmax: 900.0
+    mfSmin: 150.0     # supply mass flow bounds             [kg/s]
+    mfSmax: 800.0
+    mfRmin: 150.0     # return mass flow bounds             [kg/s]
+    mfRmax: 800.0
   - id: 2
     from: 2           # HP node -> load node
     to: 3
@@ -65,10 +65,10 @@ pipes:
     L: 8000.0
     mu: 1.0
     phi: 2.0
-    mfSmin: 20.0
-    mfSmax: 700.0
-    mfRmin: 20.0
-    mfRmax: 700.0
+    mfSmin: 100.0
+    mfSmax: 600.0
+    mfRmin: 100.0
+    mfRmax: 600.0
 
 # Heat stations: heat producers. Each sits at a DHN node and at an electricity bus.
 heatStations:
@@ -77,24 +77,24 @@ heatStations:
     dhnNode: 1
     bus: 2
     Qmax: 120.0       # maximum heat output                 [MW]
-    mfmin: 0.0        # mass flow through the station       [kg/s]
-    mfmax: 900.0
+    mfmin: 150.0      # mass flow through the station       [kg/s]
+    mfmax: 800.0
     etaPump: 0.8      # water pump efficiency, Eq. (27)     [-]
   - id: HP1
     type: hp          # heat pump, Eq. (30)
     dhnNode: 2
     bus: 5
     Qmax: 60.0
-    mfmin: 0.0
-    mfmax: 700.0
+    mfmin: 100.0
+    mfmax: 600.0
     etaPump: 0.8
 
 # Heat exchanger stations: the heat loads, Eqs. (21)-(23).
 heatExchangerStations:
   - id: HES1
     dhnNode: 3
-    mfmin: 0.0
-    mfmax: 1600.0
+    mfmin: 250.0
+    mfmax: 1400.0
     dprmin: 1.0e5     # minimum supply-return pressure difference [Pa]
 
 # ------------------------------------------------------------ electricity

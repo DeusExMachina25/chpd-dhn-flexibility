@@ -93,11 +93,27 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     TRout = m.ext[:variables][:TRout] = @variable(m, [pp=IP, t=T],
         lower_bound=TRlo * (1 - maximum(values(gamma))), upper_bound=TRhi, base_name="TRout")
 
-    # Mass flow rates at the stations, bounded by Eqs. (26) and (22)
+    # Mass flow rates at the stations, bounded by Eqs. (26) and (22).
+    #
+    # The bounds in the data file are the physical limits of the equipment, but
+    # (21) and (24) imply much narrower ones: a station moving heat X across a
+    # temperature difference that (18) confines to [dTlo, dThi] can only be
+    # running a flow between X/(c*dThi) and X/(c*dTlo). Since the heat load is
+    # known, that pins the heat exchanger flow to a narrow band. These bounds
+    # are valid for the original model too - they are implied by its own
+    # constraints - but they matter most for the relaxation, whose envelopes
+    # are only as tight as the box they are built on.
+    dTlo(n) = p[:TSmin][n] - p[:TRmax][n]
+    dThi(n) = p[:TSmax][n] - p[:TRmin][n]
+
+    mfHESlo = Dict((i, t) => max(p[:mfHESmin][i], LH[i, t] / (c * dThi(HESnode[i]))) for i in IHES, t in T)
+    mfHEShi = Dict((i, t) => min(p[:mfHESmax][i], LH[i, t] / (c * dTlo(HESnode[i]))) for i in IHES, t in T)
+    mfHShi = Dict(j => min(p[:mfHSmax][j], p[:Qmax][j] / (c * dTlo(HSnode[j]))) for j in IHS)
+
     mfHS = m.ext[:variables][:mfHS] = @variable(m, [j=IHS, t=T],
-        lower_bound=p[:mfHSmin][j], upper_bound=p[:mfHSmax][j], base_name="mfHS")
+        lower_bound=p[:mfHSmin][j], upper_bound=mfHShi[j], base_name="mfHS")
     mfHES = m.ext[:variables][:mfHES] = @variable(m, [i=IHES, t=T],
-        lower_bound=p[:mfHESmin][i], upper_bound=p[:mfHESmax][i], base_name="mfHES")
+        lower_bound=mfHESlo[(i, t)], upper_bound=mfHEShi[(i, t)], base_name="mfHES")
 
     # Heat production of the heat stations, bounded by Eq. (25)
     Q = m.ext[:variables][:Q] = @variable(m, [j=IHS, t=T],

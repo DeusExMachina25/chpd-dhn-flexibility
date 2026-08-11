@@ -94,6 +94,40 @@ function check_mccormick(m::Model)
     return res
 end
 
+# How loose can each envelope possibly be? For w = x*y over a box, the worst
+# case distance between the McCormick hull and the true surface is
+# (xhi-xlo)*(yhi-ylo)/4, reached in the middle of the box. This says up front
+# how much error the bounds allow, before any solving happens.
+function report_envelope_widths(m::Model)
+    T = m.ext[:sets][:T]
+    IHS = m.ext[:sets][:IHS]; IHES = m.ext[:sets][:IHES]
+    INmixS = m.ext[:sets][:INmixS]; SPminus = m.ext[:sets][:SPminus]
+    p = m.ext[:parameters]; c = p[:c]
+    mfHS = m.ext[:variables][:mfHS]; mfHES = m.ext[:variables][:mfHES]
+    dTHS = m.ext[:variables][:dTHS]; dTHES = m.ext[:variables][:dTHES]
+
+    println("\n--- How loose the envelopes are allowed to be ---")
+    for i in IHES, t in T
+        dx = upper_bound(mfHES[i, t]) - lower_bound(mfHES[i, t])
+        dy = upper_bound(dTHES[i, t]) - lower_bound(dTHES[i, t])
+        println("  Eq. (21) $i t=$t: mf range $(round(dx)) kg/s, dT range $(round(dy)) K",
+                " -> up to $(round(c * dx * dy / 4, digits=1)) MW of slack")
+    end
+    for j in IHS, t in T
+        dx = upper_bound(mfHS[j, t]) - lower_bound(mfHS[j, t])
+        dy = upper_bound(dTHS[j, t]) - lower_bound(dTHS[j, t])
+        println("  Eq. (24) $j t=$t: mf range $(round(dx)) kg/s, dT range $(round(dy)) K",
+                " -> up to $(round(c * dx * dy / 4, digits=1)) MW of slack")
+    end
+    for n in INmixS, pp in SPminus[n]
+        dx = p[:TSmax][n] - p[:TSmin][n]
+        dy = p[:mfSmax][pp] - p[:mfSmin][pp]
+        println("  Eq. (16) node $n pipe $pp: T range $(round(dx)) K, mf range $(round(dy)) kg/s",
+                " -> up to $(round(dx * dy / 4)) kg.K/s of slack")
+    end
+    return nothing
+end
+
 # 3. Physical sanity of the dispatch.
 function check_physics(m::Model)
     T = m.ext[:sets][:T]
@@ -119,11 +153,11 @@ function check_physics(m::Model)
     println("\n--- Physical checks ---")
 
     # Nodal mass balance, Eq. (14)
-    mS = maximum(abs(sum(mfS[pp, t] for pp in SPminus[n]) + sum(mfHS[j, t] for j in SHS[n])
-                     - sum(mfS[pp, t] for pp in SPplus[n]) - sum(mfHES[i, t] for i in SHES[n]))
+    mS = maximum(abs(sum(mfS[pp, t] for pp in SPminus[n]; init=0.0) + sum(mfHS[j, t] for j in SHS[n]; init=0.0)
+                     - sum(mfS[pp, t] for pp in SPplus[n]; init=0.0) - sum(mfHES[i, t] for i in SHES[n]; init=0.0))
                  for n in IN, t in T)
-    mR = maximum(abs(sum(mfR[pp, t] for pp in SPplus[n]) + sum(mfHES[i, t] for i in SHES[n])
-                     - sum(mfR[pp, t] for pp in SPminus[n]) - sum(mfHS[j, t] for j in SHS[n]))
+    mR = maximum(abs(sum(mfR[pp, t] for pp in SPplus[n]; init=0.0) + sum(mfHES[i, t] for i in SHES[n]; init=0.0)
+                     - sum(mfR[pp, t] for pp in SPminus[n]; init=0.0) - sum(mfHS[j, t] for j in SHS[n]; init=0.0))
                  for n in IN, t in T)
     println("  mass balance residual   supply $(round(mS, sigdigits=3)) kg/s, return $(round(mR, sigdigits=3)) kg/s")
 
@@ -150,12 +184,12 @@ function check_physics(m::Model)
     end
 
     # Power balance and line loading
-    pb = maximum(abs(LE[b, t] + sum(LHP[j, t] for j in SHP[b]) + sum(Lpump[j, t] for j in SHSbus[b])
-                     - sum(P[g, t] for g in SE[b])
-                     - sum(p[:B][(b, mm)] * (theta[mm, t] - theta[b, t]) for mm in SB[b]))
+    pb = maximum(abs(LE[b, t] + sum(LHP[j, t] for j in SHP[b]; init=0.0) + sum(Lpump[j, t] for j in SHSbus[b]; init=0.0)
+                     - sum(P[g, t] for g in SE[b]; init=0.0)
+                     - sum(p[:B][(b, mm)] * (theta[mm, t] - theta[b, t]) for mm in SB[b]; init=0.0))
                  for b in IB, t in T)
     over = maximum(abs(p[:B][(b, mm)] * (theta[mm, t] - theta[b, t])) / p[:fmax][(b, mm)]
-                   for b in IB, mm in SB[b], t in T)
+                   for b in IB for mm in SB[b] for t in T)
     println("  power balance residual  $(round(pb, sigdigits=3)) MW")
     println("  worst line loading      $(round(over * 100, digits=1)) % of the limit")
 

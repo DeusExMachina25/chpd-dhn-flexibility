@@ -19,10 +19,19 @@ relaxation can be checked against the problem it relaxes.
 
 ## How to run it
 
-1. Install [Julia](https://julialang.org/downloads/) 1.11 or later and make
-   sure a Gurobi installation with a valid licence is on the machine
-   (`GUROBI_HOME` set). Gurobi is used because Section II is non-convex and
-   Section III-B is a convex quadratically constrained problem.
+1. Install [Julia](https://julialang.org/downloads/) 1.11 or later.
+
+   Gurobi is the preferred solver: Section II is non-convex, which it handles
+   with spatial branch and bound (`NonConvex=2`), and Section III-B is a convex
+   quadratically constrained problem. If a licensed Gurobi is on the machine
+   (`GUROBI_HOME` set) it is used automatically.
+
+   **A Gurobi licence is not required to run this.** `solvers.jl` checks for
+   one and falls back to Ipopt and HiGHS, both of which come with the
+   environment. Section III-B is convex, so Ipopt returns the global optimum
+   there and nothing is lost; Section II is not, so its objective should then
+   be read as a local solution. On this case study the two stacks agree on
+   3390.427 $ to six significant figures.
 
 2. From this directory, instantiate the environment. This downloads and
    precompiles everything listed in `Project.toml`; the first run takes a few

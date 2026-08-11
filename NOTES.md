@@ -79,8 +79,8 @@ HP1 at bus 5, loads at buses 3, 4 and 6.
 | ρ | 963 kg/m³ | water at ~90 °C |
 | c | 4182 J/(kg·K) | water |
 | Δt | 3600 s | the paper uses 24 hourly steps |
-| supply temperature | 343–373 K | 70–100 °C, normal DH supply band |
-| return temperature | 313–333 K | 40–60 °C, normal DH return band |
+| supply temperature | 353–373 K | 80–100 °C, normal DH supply band. Started at 70–100 °C and narrowed: see §4 on envelope tightness |
+| return temperature | 313–323 K | 40–50 °C, normal DH return band, narrowed for the same reason |
 | pipe radius | 0.36 m / 0.30 m | sized for ~1.5 m/s at the nominal flow, ≈ DN700/DN600 |
 | pipe length | 11 km / 8 km | gives a travel time of roughly 2 h at nominal flow, which is what makes pipeline storage worth modelling at all |
 | μ | 1.0 W/(m²·K) | insulated DH pipe; gives ≈ 0.5 % temperature loss per hour of travel |
@@ -167,12 +167,102 @@ exact.
 *(filled in as they come up — this section feeds the "challenges" part of the
 report)*
 
-- **Gurobi licence.** Gurobi 11.0 is installed on the machine but no
-  `gurobi.lic` was found in the usual locations. If only the size-limited
-  default licence is available, the one-step model fits comfortably but the
-  full 24-hour model with delay binaries may not. Fallback: Clarabel for the
-  convex QCP, HiGHS for the CED and for the (37) MILP route, Ipopt for the
-  non-convex Section II reference.
+- **Gurobi licence.** Gurobi 11.0 was installed but initially unlicensed
+  (`Gurobi Error 10009`), so the first working version of the code ran on Ipopt
+  (Sections II and III-B) and HiGHS (the CED). The licence was activated part
+  way through and Gurobi is now used for everything. `solvers.jl` still
+  detects which of the two is available and picks accordingly, so the project
+  runs either way.
+
+  That detour turned into a useful cross-check rather than wasted effort. Ipopt
+  is an interior point NLP solver and finds a *local* solution of the
+  non-convex Section II; Gurobi with `NonConvex=2` does spatial branch and
+  bound and returns a certified *global* one. Both land on **3390.427 $**,
+  agreeing to six significant figures. Two unrelated algorithms reaching the
+  same point is decent evidence that the Section II formulation has no stray
+  local optima on this case, and that the objective reported below is the real
+  optimum rather than whatever Ipopt happened to walk into.
 - **Julia precompilation** on this machine is slow (several minutes for the
   JuMP/Gurobi/Plots stack). Not a modelling problem, but worth knowing before
   blaming the model for a hang.
+
+- **The McCormick relaxation is loose, and bound width is the whole story.**
+  The first run gave a relaxed objective 50 % below the original. Nothing was
+  wrong with the formulation: the mass flow bounds in the data file were the
+  physical limits of the equipment (`mfHES` anywhere in 40–1600 kg/s) while the
+  actual flows sit near 600 kg/s. For `w = x*y` on a box, the McCormick hull
+  can sit as far as `(xhi-xlo)*(yhi-ylo)/4` from the true surface, which for
+  those bounds is 83 MW of slack on a 98 MW load — the relaxation could pretend
+  to serve the load without moving any water.
+
+  Two rounds of tightening, both rigorous:
+
+  1. Realistic operating bands in `network.yaml` (supply 80–100 °C, return
+     40–50 °C, flows within the pipes' real range). Gap 50.0 % → 25.6 %.
+  2. Bounds implied by the model's own constraints, computed in
+     `build_chpd_minlp!`: a station moving heat `X` across a temperature
+     difference that (18) confines to `[dTlo, dThi]` must run a flow between
+     `X/(c*dThi)` and `X/(c*dTlo)`. Since the heat load is a known parameter,
+     this pins the heat exchanger flow to 390–781 kg/s instead of 250–1400.
+     Gap 25.6 % → 23.2 %. The envelopes are built on whatever bounds the
+     variables actually carry, so this propagates automatically.
+
+  `report_envelope_widths` in `results.jl` prints the worst-case slack each
+  envelope is allowed, which is what made the diagnosis quick.
+
+  23 % is still loose, and no amount of box tightening fixes that — plain
+  McCormick is a single linear hull over a wide box. Closing it further needs
+  piecewise McCormick (partition the mass flow range, one binary per segment),
+  which is the standard remedy and would make the one-step problem a genuine
+  MISOCP rather than the convex QCP it currently is. Noted for the report as
+  the obvious extension.
+
+---
+
+## 5. One-step results
+
+Reconstructed data, `t = 1`, no time delays. `julia --project=. chpd.jl`.
+
+| model | objective | solver | status |
+|---|---|---|---|
+| Section IV-A, CED | 3204.32 $ | Gurobi (LP) | optimal |
+| Section II, original | 3390.43 $ | Gurobi `NonConvex=2` | optimal (global) |
+| Section III-B, relaxed | 2605.11 $ | Gurobi (convex QCP) | optimal |
+
+**The relaxation is a valid lower bound**, 2605.11 ≤ 3390.43, gap 23.2 %.
+
+**Eq. (36) is exact.** Slack on the relaxed pressure loss inequality is 0.17 Pa
+at worst, i.e. it holds with equality at the optimum. This is expected rather
+than lucky: pump cost (27) is increasing in the pressure difference, so the
+objective pushes the constraint down onto the original quadratic surface. The
+convex quadratic part of III-B costs nothing in accuracy here — all of the gap
+comes from the McCormick side.
+
+**Physical checks on the Section II solution** all close at machine precision:
+mass balance 0 kg/s, heat balance 6.3e-11 MW (104.655 MW produced = 98 MW load
++ 6.655 MW pipe losses), DC power balance 3.3e-11 MW, CHP inside its (28)/(29)
+region, heat pump exactly on `Q = COP*LHP`, worst line at 36.8 % of its limit.
+
+**CHPD vs CED: 3390.43 $ against 3204.32 $, i.e. the CHPD costs 5.81 % *more*.**
+This is the expected result at a single time step and not a contradiction of
+the paper. The DHN's value is storage, and one period has nowhere to store
+anything; what remains is the cost the CED ignores — water pumping (0.146 MW)
+and 6.655 MW of pipe heat losses. The paper's 3.51 % saving is a 24-hour
+effect that only appears once the pipeline can be charged and discharged, so it
+cannot be reproduced or expected here. Reproducing it is Phase 7.
+
+### Tests
+
+`julia --project=. test/runtests.jl` — 14 tests, all passing:
+
+- `mccormick!` reproduces a known bilinear product exactly at the corners of
+  the box and brackets it in the interior.
+- A two-node network solved by hand: supply temperature at its 373 K ceiling,
+  mass flow 427.759 kg/s, heat output 107.333 MW, matched to 1e-4 relative.
+  This one earned its place. The first version of the hand derivation assumed
+  the return temperature `TR2` would sit on its own 313 K lower bound and the
+  test failed at 427.759 vs 413.866. The model was right: the water arrives at
+  the heat station already cooled, `TR1 = TR2*(1-g)`, so it is the bound on
+  `TR1` at the *far* end of the pipe that binds first, giving
+  `TR2 = TRmin/(1-g) = 314.876 K`. The derivation was corrected, not the code.
+- The relaxation bounds the original from below on the test network too.
