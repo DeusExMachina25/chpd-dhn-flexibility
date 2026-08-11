@@ -15,8 +15,8 @@ from it.
 | (1) | mass flow bounds in the pipes | `build_chpd_minlp.jl`, variable bounds on `mfS`, `mfR` |
 | (2) | pressure loss, quadratic equality | `build_chpd_minlp.jl` `:eq2S`, `:eq2R` |
 | (3), (4) | pipe inlet temperatures | `:eq3`, `:eq4` |
-| (5) | pipe outlet temperature, Taylor heat loss | `:eq5S`, `:eq5R` (zero delay, see §3.1) |
-| (6)–(13) | time delays, big-M linearisation | not yet implemented, phase 7 |
+| (5) | pipe outlet temperature, Taylor heat loss | `:eq5S`, `:eq5R` (zero-delay case only, see §3.1) |
+| (6)–(13) | time delays, big-M linearisation | `delays.jl`, `add_delays!` |
 | (14) | nodal mass balance | `:eq14S`, `:eq14R` |
 | (15) | nodal pressure bounds | variable bounds on `prS`, `prR` |
 | (16), (17) | nodal temperature mixing, bilinear | `:eq16`, `:eq17` |
@@ -42,12 +42,18 @@ from it.
 
 ---
 
-## 2. Case study
+## 2. Case study — SUPERSEDED, kept as a record
+
+> **This section describes the reconstruction used in phases 1–6, which is no
+> longer what the code runs.** Section 6 has the authors' real data. It is kept
+> because the report's "challenges" section needs the before/after, and because
+> the reconstruction is what the model was first proven on. Do not quote the
+> numbers below as results.
 
 Reconstructed from Fig. 2 and Section IV-A. **These are not the paper's
 numbers** — the paper puts its data in the online appendix
-(doi:10.5281/zenodo.1195508), which we deliberately do not use until the model
-itself is proven. Results in this phase therefore validate the *model*, not the
+(doi:10.5281/zenodo.1195508), which we deliberately did not use until the model
+itself was proven. Results in this phase therefore validate the *model*, not the
 paper's results.
 
 ### Topology
@@ -111,8 +117,12 @@ decided. Worth raising with the TA.
 
 The assignment says to validate one step first. With a single time period the
 delay variables τ of (6) can only be zero, so (6)–(13) and their binaries
-collapse and (5) reduces to a pure loss factor
-`T_out = T_in · (1 − 2μΔt/(ρ c R))`.
+collapse.
+
+**Corrected in phase 7:** at τ = 0 the loss bracket of (5) is exactly 1, so
+there is no thermal loss at all — not the `T_out = T_in · (1 − 2μΔt/(ρ c R))`
+that was written here first. See §6. Zero delay also has to be *earned*: it
+requires `mf·Δt ≥ ρπR²L`, which is now imposed.
 
 Consequence, and it matters for reading the results: **with one step the DHN
 has no storage**. The whole benefit the paper reports comes from shifting heat
@@ -219,7 +229,12 @@ report)*
 
 ---
 
-## 5. One-step results
+## 5. One-step results — SUPERSEDED, kept as a record
+
+> **Run on the reconstructed data of §2 and with the Eq. (5) bug described in
+> §6.** The relaxation-gap story and the test narrative below still stand; the
+> objective values and every "pipe losses" figure do not. Section 6 has the
+> current numbers.
 
 Reconstructed data, `t = 1`, no time delays. `julia --project=. chpd.jl`.
 
@@ -379,3 +394,78 @@ The relaxation gap is now only 1.39 %, against 23 % on the reconstruction. The
 reason is the flow bound above: it pins the pipe flows into 279-300 kg/s, and
 McCormick tightness is driven by exactly that width. Eq. (36) is tight to
 within 3.3 Pa.
+
+---
+
+## 7. Time delays and pipeline storage (Eqs. 6-13)
+
+Implemented in `delays.jl`, one `add_delays!` call per network. The chain:
+
+- **(6)-(7)** `u[p,t,s] = 1` iff the mass pushed through the pipe over the last
+  `s+1` steps reaches a pipe volume `rho*pi*R^2*L`. Big-M is computed per pipe
+  from the widest the residual can get, not picked out of the air.
+- **(8)** with `u` monotone in `s` (added explicitly - implied by (7), and it
+  cuts the search space a lot), `tau = taumax + 1 - sum(u)` picks the switch
+  point.
+- **(9)-(12)** `v[p,t,s] = 1` for the single `s` equal to `tau`, and
+  `Ttilde[p,t,s]` then carries `Tin[p,t-s] * (1 - s*gamma)`.
+- **(13)** the outlet temperature is the sum of `Ttilde` over `s`.
+
+Steps before the start of the horizon need history. As the authors do, the flow
+is held at its minimum and the temperature at the cold end of the band.
+
+`taumax` is 6 hours for these pipes: `rho*pi*R^2*L / (mf_min*dt)` with
+`mf_min = 50 kg/s`.
+
+### The licence ceiling
+
+The available Gurobi licence is the **size-limited** one (2000 variables and
+constraints). The delay model needs roughly 224 constraints per time step -
+`u`, `v` and `Ttilde` over 7 candidate delays, 2 pipes, 2 networks - so it fits
+up to **6 hours** and fails at 8 with `Gurobi Error 10010`. `safe_optimize!`
+now reports this and carries on instead of crashing.
+
+This is a tooling limit, not a modelling one. It is exactly the situation the
+paper describes in a different form: the delayed model does not scale, which is
+why they relax it.
+
+### Storage does what the paper says it does
+
+Same 6-hour window, hours 18-23, chosen because it straddles the evening event
+in this data: the wind availability factor collapses from 0.68 to 0.06 and 0.04
+at hours 20 and 21 while the heat load peaks at 111 MW at hour 20.
+
+| hours 18-23 | Section II CHPD |
+|---|---|
+| delays off, no storage | 11583.52 $ |
+| delays on, storage available | **11278.18 $** |
+
+**305.34 $, or 2.64 %, and it comes from nothing but Eqs. (6)-(13).** The two
+runs are the same data, the same network and the same units; the only
+difference is whether the model is allowed to push heat into the pipes early
+and take it out later. The paper reports 3.51 % over 24 hours, so a 2.64 %
+saving over a 6-hour window containing the single sharpest wind drought of the
+day is the right order of magnitude.
+
+Run them yourself with:
+
+```
+julia --project=. chpd.jl 6 from=18 delays
+julia --project=. chpd.jl 6 from=18
+```
+
+### What is still open
+
+The 24-hour CHPD cannot be solved with the current licence, so the paper's
+18600 $ is **not** reproduced. Only the CED half of the comparison is
+(19276.98 $ against 19277 $, §6).
+
+One honest observation while it is open: over hours 18-23 our CHPD costs *more*
+than the CED (14.3 % with storage), where the paper has it costing less. That
+is not obviously a bug. The CED has no heating network at all, so it lets the
+cheap heat pump at node 1 serve the whole load; the CHPD has to push that heat
+down two pipes capped at 300 kg/s, which at the 90 K maximum temperature
+difference carries at most `c*300*90 = 113.8 MW` - against a 111 MW heat load
+at hour 20. The network is genuinely close to binding, which forces the more
+expensive CHP on and is a real effect the CED cannot see. Whether the 24-hour
+picture reverses, as the paper reports, needs the full run.

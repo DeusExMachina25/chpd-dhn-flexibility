@@ -21,12 +21,21 @@ catch
     false
 end
 
+# Time limit for the two hard models. Section II over 24 hours with the delay
+# binaries is a non-convex MINLP and does not close in any reasonable time -
+# which is the whole reason the paper proposes a relaxation. When the limit
+# bites we report the incumbent and the bound rather than pretending the number
+# is optimal.
+const TIMELIMIT = 600.0
+
 nonconvex_solver() = HAS_GUROBI ?
-    optimizer_with_attributes(Gurobi.Optimizer, "NonConvex" => 2, "OutputFlag" => 0) :
+    optimizer_with_attributes(Gurobi.Optimizer, "NonConvex" => 2, "OutputFlag" => 0,
+                              "TimeLimit" => TIMELIMIT) :
     optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 0)
 
 convex_solver() = HAS_GUROBI ?
-    optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0) :
+    optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0,
+                              "TimeLimit" => TIMELIMIT) :
     optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 0)
 
 lp_solver() = HAS_GUROBI ?

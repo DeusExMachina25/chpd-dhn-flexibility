@@ -6,22 +6,68 @@
 # At a single time step all of this is small enough to be checked by hand,
 # which is exactly why we start there.
 
+solved(m::Model) = termination_status(m) != MOI.OPTIMIZE_NOT_CALLED && has_values(m)
+
+# Solving can fail outright rather than just fail to converge - the usual cause
+# here is the size-limited Gurobi licence refusing a model with a few thousand
+# delay binaries. That is worth reporting and carrying on with, not crashing
+# the whole run, because the other models still have something to say.
+function safe_optimize!(m::Model, label::String)
+    try
+        optimize!(m)
+    catch err
+        msg = sprint(showerror, err)
+        println(rpad(label, 22), " FAILED TO SOLVE")
+        println("    ", first(split(msg, '\n')))
+        if occursin("size-limited", msg)
+            println("    -> this needs an unrestricted Gurobi licence, or a solver",
+                    " without a size cap. See README.")
+        end
+        return :failed
+    end
+    return report_status(m, label)
+end
+
 function report_status(m::Model, label::String)
     st = termination_status(m)
-    println(rpad(label, 22), " status: ", st,
-            st == MOI.OPTIMAL || st == MOI.LOCALLY_SOLVED ?
-            "   objective: $(round(objective_value(m), digits=3)) \$" : "")
+    msg = rpad(label, 22) * " status: " * string(st)
+    if solved(m)
+        msg *= "   objective: $(round(objective_value(m), digits=3)) \$"
+        # When the time limit bites the incumbent is not proven optimal, so
+        # say how far the solver still had to go.
+        if st != MOI.OPTIMAL && st != MOI.LOCALLY_SOLVED
+            msg *= "   bound: $(round(objective_bound(m), digits=3)) \$" *
+                   "   (MIP gap $(round(relative_gap(m) * 100, digits=2)) %)"
+        end
+    end
+    println(msg)
     return st
 end
 
 # 1. The relaxation has to be a lower bound of the original minimisation.
+#
+# If either model stopped on the time limit the comparison still works, but it
+# has to be made between the right quantities: the relaxation's valid lower
+# bound is its dual bound, and the original's valid upper bound is its
+# incumbent. Comparing two unproven incumbents would say nothing.
 function check_lower_bound(m_relaxed::Model, m_original::Model)
-    zr = objective_value(m_relaxed)
+    if !solved(m_relaxed) || !solved(m_original)
+        println("\n--- Relaxation quality ---")
+        println("  skipped: one of the models has no solution")
+        return NaN
+    end
+    exact = termination_status(m_relaxed) in (MOI.OPTIMAL, MOI.LOCALLY_SOLVED) &&
+            termination_status(m_original) in (MOI.OPTIMAL, MOI.LOCALLY_SOLVED)
+
+    zr = exact ? objective_value(m_relaxed) : objective_bound(m_relaxed)
     zo = objective_value(m_original)
     gap = (zo - zr) / abs(zo) * 100
+
     println("\n--- Relaxation quality ---")
-    println("  Section III-B (relaxed) : $(round(zr, digits=3)) \$")
-    println("  Section II   (original) : $(round(zo, digits=3)) \$")
+    println("  Section III-B (relaxed) : $(round(zr, digits=3)) \$",
+            exact ? "" : "   (dual bound, time limit hit)")
+    println("  Section II   (original) : $(round(zo, digits=3)) \$",
+            exact ? "" : "   (incumbent, time limit hit)")
     println("  gap                     : $(round(gap, digits=4)) %")
     if zr > zo + 1e-6
         println("  !! the relaxation is ABOVE the original - envelopes or Eq. (36) are wrong")

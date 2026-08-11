@@ -53,10 +53,6 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     HSnode = p[:HSnode]
     HESnode = p[:HESnode]
 
-    if delays
-        error("Time delays (Eqs. 5-13) are not implemented yet - phase 7.")
-    end
-
     # Global temperature bounds, used for the pipe temperature variables and
     # later for the McCormick envelopes.
     TSlo = minimum(p[:TSmin][n] for n in IN); TShi = maximum(p[:TSmax][n] for n in IN)
@@ -182,8 +178,14 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     # Losing nothing over a pipe is obviously not physical. It is an artefact
     # of discretising the delay into whole time steps, and it is what the model
     # in the paper says. See NOTES.md.
-    m.ext[:constraints][:eq5S] = @constraint(m, [pp=IP, t=T], TSout[pp, t] == TSin[pp, t])
-    m.ext[:constraints][:eq5R] = @constraint(m, [pp=IP, t=T], TRout[pp, t] == TRin[pp, t])
+    if delays
+        # Eqs. (6)-(13) replace (5) with the full delay model. See delays.jl.
+        add_delays!(m, :supply)
+        add_delays!(m, :return)
+    else
+        m.ext[:constraints][:eq5S] = @constraint(m, [pp=IP, t=T], TSout[pp, t] == TSin[pp, t])
+        m.ext[:constraints][:eq5R] = @constraint(m, [pp=IP, t=T], TRout[pp, t] == TRin[pp, t])
+    end
 
     # Eq. (14) - nodal mass balance. Supply: what arrives through the pipes and
     # what the heat stations inject equals what leaves through the pipes and
