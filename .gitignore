@@ -2,6 +2,12 @@
 results/*
 !results/.gitkeep
 
+# The authors' online appendix is kept as the downloaded archives only. The
+# extracted trees carry paths up to 178 characters, which exceeds MAX_PATH on
+# Windows and makes the repository impossible to clone there with default
+# settings. Unzip locally; see appendix/README.md.
+appendix/*/
+
 # solver logs and licences
 *.log
 gurobi.log
