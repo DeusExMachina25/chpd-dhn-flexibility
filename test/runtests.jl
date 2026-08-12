@@ -1,11 +1,12 @@
 using Test
 using JuMP, YAML, CSV, DataFrames
 
-const ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(ROOT, "solvers.jl"))
-include(joinpath(ROOT, "init_model.jl"))
-include(joinpath(ROOT, "build_chpd_minlp.jl"))
-include(joinpath(ROOT, "build_chpd_misocp.jl"))
+const SRC = normpath(joinpath(@__DIR__, "..", "src"))
+include(joinpath(SRC, "solvers.jl"))
+include(joinpath(SRC, "init_model.jl"))
+include(joinpath(SRC, "delays.jl"))
+include(joinpath(SRC, "build_chpd_minlp.jl"))
+include(joinpath(SRC, "build_chpd_misocp.jl"))
 
 silent(; nonconvex=false) = nonconvex ? nonconvex_solver() : convex_solver()
 

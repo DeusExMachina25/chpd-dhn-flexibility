@@ -23,7 +23,7 @@ function safe_optimize!(m::Model, label::String)
     catch err
         msg = sprint(showerror, err)
         if occursin("size-limited", msg)
-            # The licence, not the model, is the problem. Hand it to SCIP,
+            # The licence, not the model, is the problem. Hand it to Juniper,
             # which has no size cap, and say so rather than doing it silently.
             println(rpad(label, 22), " too large for the size-limited Gurobi",
                     " licence, retrying with Juniper")

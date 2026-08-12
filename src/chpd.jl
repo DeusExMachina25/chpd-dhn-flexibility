@@ -12,8 +12,12 @@
 #            julia --project=. chpd.jl 3      (the first three time steps)
 
 ## Step 0: Activate environment - ensure consistency across computers
+# Sources live in src/, everything else is resolved relative to the project
+# root, so the study runs from any working directory on any machine.
+const ROOT = normpath(joinpath(@__DIR__, ".."))
+
 using Pkg
-Pkg.activate(@__DIR__)
+Pkg.activate(ROOT)
 Pkg.instantiate()
 
 ## Step 1: input data
@@ -21,8 +25,8 @@ using CSV
 using DataFrames
 using YAML
 
-data = YAML.load_file(joinpath(@__DIR__, "data", "network.yaml"))
-ts = CSV.read(joinpath(@__DIR__, "data", "timeseries.csv"), DataFrame)
+data = YAML.load_file(joinpath(ROOT, "data", "network.yaml"))
+ts = CSV.read(joinpath(ROOT, "data", "timeseries.csv"), DataFrame)
 println("Data loaded: $(length(data["dhnNodes"]))-node DHN, $(length(data["buses"]))-bus power system")
 
 ## Step 2: create model & pass data to model

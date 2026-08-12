@@ -8,7 +8,7 @@
 # time delay is zero everywhere, Eqs. (5)-(13) collapse into a single loss
 # factor, and no binary variables are created. That is the one-step case.
 
-function build_chpd_minlp!(m::Model; delays::Bool=false)
+function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0)
     m.ext[:variables] = Dict()
     m.ext[:expressions] = Dict()
     m.ext[:constraints] = Dict()
@@ -121,6 +121,19 @@ function build_chpd_minlp!(m::Model; delays::Bool=false)
     mfHESlo = Dict((i, t) => max(p[:mfHESmin][i], LH[i, t] / (c * dThi(HESnode[i]))) for i in IHES, t in T)
     mfHEShi = Dict((i, t) => min(p[:mfHESmax][i], LH[i, t] / (c * dTlo(HESnode[i]))) for i in IHES, t in T)
     mfHShi = Dict(j => min(p[:mfHSmax][j], p[:Qmax][j] / (c * dTlo(HSnode[j]))) for j in IHS)
+
+    # `widen` is an analysis knob, not part of the model: it relaxes the
+    # load-implied bounds above back towards the raw equipment limits, so that
+    # the relaxation gap can be measured as a function of the width of the box
+    # the McCormick envelopes are built on. widen = 0 changes nothing (the
+    # default, and what every reported result uses); widen = 1 restores the
+    # equipment limits. Used by src/make_figures.jl. The bounds stay valid for
+    # the original model at any setting, since widening only ever admits more.
+    if widen > 0
+        mfHESlo = Dict(k => v - widen * (v - p[:mfHESmin][k[1]]) for (k, v) in mfHESlo)
+        mfHEShi = Dict(k => v + widen * (p[:mfHESmax][k[1]] - v) for (k, v) in mfHEShi)
+        mfHShi = Dict(k => v + widen * (p[:mfHSmax][k] - v) for (k, v) in mfHShi)
+    end
 
     mfHS = m.ext[:variables][:mfHS] = @variable(m, [j=IHS, t=T],
         lower_bound=p[:mfHSmin][j], upper_bound=mfHShi[j], base_name="mfHS")
