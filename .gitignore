@@ -1,5 +1,19 @@
+# generated output
 results/*
 !results/.gitkeep
+
+# solver logs and licences
 *.log
 gurobi.log
+gurobi.lic
+*.lic
+
+# editor / OS / office lock files
 .vscode/
+.idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+desktop.ini
+.~lock.*#
+~$*

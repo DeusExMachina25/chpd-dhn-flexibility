@@ -6,94 +6,179 @@ Julia/JuMP implementation of the Combined Heat and Power Dispatch (CHPD) of
 > heating networks*, 2018 Power Systems Computation Conference (PSCC), Dublin,
 > Ireland, pp. 1–7. doi:[10.23919/PSCC.2018.8442617](https://doi.org/10.23919/PSCC.2018.8442617)
 
-Three models are built on the same data set:
+A district heating network stores thermal energy simply because water takes time
+to travel down a pipe. That storage lets combined heat and power units follow the
+electricity system instead of the heat load. This repository builds the paper's
+dispatch model, which co-optimises a DC optimal power flow with the hydraulic and
+thermal state of the heating network, and the convex relaxation that makes it
+tractable.
 
-| Model | Paper section | What it is |
-|---|---|---|
-| `build_chpd_minlp!` | II | the original formulation: bilinear equalities and a quadratic pressure loss, so non-convex |
-| `build_chpd_misocp!` | III-B | the convex relaxation: McCormick envelopes (III-A) on the bilinear terms plus the convex quadratic pressure loss (36) |
-| `build_ced!` | IV-A | conventional economic dispatch, the benchmark with no heating network at all |
+The assignment deliverable is the **Section II** model and its **Section III-B**
+relaxation, validated at a single time step. Section IV-A and the pipeline time
+delays are additional work, marked as such below.
 
-The Section III-B model is the deliverable; Section II exists so that the
-relaxation can be checked against the problem it relaxes.
+| Builder | Paper section | What it is | Scope |
+|---|---|---|---|
+| `build_chpd_minlp!` | II | the original formulation: bilinear equalities and a quadratic pressure loss, so non-convex | required |
+| `build_chpd_misocp!` | III-B | the convex relaxation: McCormick envelopes (III-A) on the bilinear terms plus the convex quadratic pressure loss (36) | required |
+| `build_ced!` | IV-A | conventional economic dispatch, the benchmark with no heating network at all | extension |
+| `add_delays!` | II, Eqs. (6)–(13) | pipeline time delays, i.e. the storage itself | extension |
+
+Section II exists so that the relaxation can be checked against the problem it
+relaxes.
+
+## Prerequisites
+
+Install [Julia](https://julialang.org/downloads/) 1.11 or later.
+
+**No commercial licence is required.** `src/solvers.jl` picks what is available:
+
+| situation | solver used |
+|---|---|
+| licensed Gurobi present | Gurobi (`NonConvex=2` for Section II) |
+| no Gurobi licence | Ipopt for Sections II and III-B, HiGHS for the CED |
+| model too large for a size-limited Gurobi licence | Juniper (Ipopt + HiGHS), automatically |
+
+Gurobi is preferred because Section II is non-convex and it does spatial branch
+and bound. The fallbacks are not equivalent, and the difference matters when
+reading the output: **Section III-B is convex**, so any of them returns its
+global optimum; **Section II is not**, so under Ipopt or Juniper its objective is
+a valid upper bound rather than a certified optimum. Where both stacks could run,
+they agreed (3390.427 $ to six significant figures on the earlier reconstructed
+case).
 
 ## How to run it
 
-1. Install [Julia](https://julialang.org/downloads/) 1.11 or later.
+From the repository root, instantiate the environment. This installs the exact
+versions pinned in `Manifest.toml`; the first run takes a few minutes to
+precompile, later runs start in seconds.
 
-   Gurobi is the preferred solver: Section II is non-convex, which it handles
-   with spatial branch and bound (`NonConvex=2`), and Section III-B is a convex
-   quadratically constrained problem. If a licensed Gurobi is on the machine
-   (`GUROBI_HOME` set) it is used automatically.
+```bash
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+```
 
-   **A Gurobi licence is not required to run this.** `solvers.jl` checks for
-   one and falls back to Ipopt and HiGHS, both of which come with the
-   environment. Section III-B is convex, so Ipopt returns the global optimum
-   there and nothing is lost; Section II is not, so its objective should then
-   be read as a local solution. On this case study the two stacks agree on
-   3390.427 $ to six significant figures.
+Then run the study:
 
-2. From this directory, instantiate the environment. This downloads and
-   precompiles everything listed in `Project.toml`; the first run takes a few
-   minutes.
+```bash
+julia --project=. src/chpd.jl
+```
 
-   ```bash
-   julia --project=. -e "using Pkg; Pkg.instantiate()"
-   ```
+This builds the models, solves them, and prints the validation report: objective
+values, the relaxation gap, how exact the relaxation turned out to be, and a set
+of physical checks on the solution.
 
-3. Run the whole study end to end:
+Everything is driven by command-line arguments — no file needs editing to change
+what is solved. A bare integer sets the number of time steps, `from=N` starts the
+horizon at hour `N`, and `delays` enables Eqs. (6)–(13).
 
-   ```bash
-   julia --project=. chpd.jl
-   ```
+| Command | What it solves |
+|---|---|
+| `julia --project=. src/chpd.jl` | one time step at hour 1, no delays — the default |
+| `julia --project=. src/chpd.jl 1 from=20` | one time step at hour 20, the wind-scarce hour reported in the report |
+| `julia --project=. src/chpd.jl 24` | the full 24-hour horizon, no delays |
+| `julia --project=. src/chpd.jl 6 from=18 delays` | six hours from hour 18, with pipeline storage on |
 
-   This builds the three models, solves them, and prints the validation
-   report: objective values, the relaxation gap, how exact the relaxation
-   turned out to be, and a set of physical checks on the solution.
+The last pair is the storage result: the same six hours spanning the evening wind
+drought, with and without the delays.
 
-4. Run the tests:
+Run the tests with:
 
-   ```bash
-   julia --project=. test/runtests.jl
-   ```
+```bash
+julia --project=. test/runtests.jl
+```
 
-   The tests check the McCormick helper against a product it must reproduce
-   exactly, and solve a two-node network whose optimal dispatch is derived by
-   hand in the test file.
+The tests check the McCormick helper against a product it must reproduce exactly,
+and solve a two-node network whose optimal dispatch is derived by hand in the
+test file.
 
-## Directories
+### Expected runtime and output
+
+| Run | Runtime | Notes |
+|---|---|---|
+| single time step | seconds | after precompilation |
+| 24 h, no delays | under a minute | |
+| 6 h with delays | a few minutes | branch and bound over the delay binaries |
+| tests | under a minute | 14 tests, all passing |
+
+As a reference for checking a reproduction, `src/chpd.jl 1 from=20` prints:
+
+```
+Section IV-A (CED)      status: OPTIMAL   objective: 4377.174 $
+Section II (MINLP)      status: OPTIMAL   objective: 5223.621 $
+Section III-B (relaxed) status: OPTIMAL   objective: 5208.639 $
+  gap                     : 0.2868 %
+  ok: valid lower bound
+```
+
+together with mass, heat and power balance residuals at or near machine
+precision (1e-14 to 1e-11), CHP1 at its 250 MW fuel limit, and the heat pump
+exactly on `Q = COP·L`.
+
+The delay model of Eqs. (6)–(13) exceeds the 2000 variable/constraint cap of the
+free size-limited Gurobi licence from roughly 8 hours onward; the run detects
+this and switches to Juniper rather than failing.
+
+## Repository layout
 
 ```
 .
-├── chpd.jl               entry point: loads data, builds and solves the three models, validates
-├── init_model.jl         define_sets!, process_time_series_data!, process_parameters!
-├── build_chpd_minlp.jl   Section II, the original non-convex CHPD
-├── build_chpd_misocp.jl  Section III-B, McCormick envelopes + convex quadratic relaxation
-├── build_ced.jl          Section IV-A, the conventional economic dispatch benchmark
-├── results.jl            validation checks and reporting
-├── data/                 case study input: network.yaml (topology, units) and timeseries.csv (loads, wind, COP)
-├── results/              generated tables and figures
-├── test/                 unit tests and a small analytically solvable network
-├── report/               the assignment report
-├── NOTES.md              equation-to-code map, assumptions, and problems encountered
-└── Project.toml          the Julia environment this code runs in
+├── src/          all model code; src/chpd.jl is the single entry point
+├── data/         case study input: network.yaml (topology, units) and
+│                 timeseries.csv (loads, wind availability, COP)
+├── test/         unit tests and a small analytically solvable network
+├── results/      generated output (git-ignored except .gitkeep)
+├── report/       the assignment report
+├── appendix/     the authors' online appendix and reference code, the data source
+├── NOTES.md      equation-to-code map, assumptions, and problems encountered
+├── Project.toml  the environment, with version bounds
+└── Manifest.toml the exact dependency tree this was produced with
 ```
 
-## Current scope
+Inside `src/`:
 
-The model currently runs a **single time step with the pipeline time delays
-switched off**, which is the first validation stage asked for in the
-assignment. With one period the delay variables of Eq. (6) can only be zero, so
-Eqs. (6)–(13) and all their binary variables disappear and Eq. (5) reduces to a
-pure heat loss factor.
+| File | Contents |
+|---|---|
+| `chpd.jl` | entry point: loads data, builds and solves the models, validates |
+| `init_model.jl` | `define_sets!`, `process_time_series_data!`, `process_parameters!` |
+| `build_chpd_minlp.jl` | Section II, the original non-convex CHPD |
+| `build_chpd_misocp.jl` | Section III-B, McCormick envelopes + convex quadratic relaxation |
+| `build_ced.jl` | Section IV-A, the conventional economic dispatch benchmark |
+| `delays.jl` | Eqs. (6)–(13), the pipeline time delays and their warm start |
+| `results.jl` | validation checks and reporting |
+| `solvers.jl` | solver selection and the fallbacks described above |
 
-An important consequence for reading the results: with one time step the
-network cannot store anything, so the CHPD is expected to cost slightly *more*
-than the CED, because it pays for water pump electricity and pipe heat losses
-that the CED does not model. The 3.51 % saving reported in the paper comes from
-shifting heat production across a 24 hour horizon.
+## Data and results
 
-The case study data in `data/` is reconstructed from the paper's Figures 2 and
-3 and is **not** the authors' own data; every choice is justified in
-`NOTES.md`. Running against the authors' online appendix data, enabling the
-time delays and extending to 24 hours is the next step.
+`data/` holds the **authors' own case study**, taken from their online appendix
+(doi:[10.5281/zenodo.1195508](https://doi.org/10.5281/zenodo.1195508)) and
+reference implementation, both in `appendix/`. That code is the only complete and
+self-consistent source: the appendix PDF's tables are ambiguous once the PDF is
+de-laid-out, and its load and wind profiles appear there only as figures. Section
+6 of `NOTES.md` records the provenance of every parameter and the places where
+their appendix PDF and their code disagree.
+
+What has been established:
+
+- **The Section III-B relaxation is a valid lower bound** on Section II at every
+  horizon tested, and Eq. (36) comes out tight — the relaxed pressure loss sits on
+  the original quadratic surface, because pump cost pushes it there. The remaining
+  gap is entirely McCormick's, and tracks the width of the bounds the envelopes
+  are built on.
+- **The physical checks close at machine precision** on the Section II solution:
+  mass, heat and DC power balance, the CHP operating region, and the heat pump
+  conversion.
+- **The CED benchmark reproduces the paper exactly**: 19276.98 $ against the
+  19277 $ reported in Section IV-B. That single number depends on the data, the
+  units, the topology and the CED formulation all being right at once. *(extension)*
+- **Pipeline storage does what the paper says.** Over hours 18–23, which span the
+  evening collapse in wind availability at peak heat load, switching on Eqs.
+  (6)–(13) saves 305.34 $ (2.64 %) against the identical model with them off. The
+  paper reports 3.51 % over a full day. *(extension)*
+
+With one time step the network cannot store anything, so the CHPD is expected to
+cost *more* than the CED there — it pays for water pumping, which the CED does not
+model at all. That is not a discrepancy with the paper.
+
+The paper's full-horizon 18600 $ CHPD figure is not reproduced. It needs 24 hours
+with the delays on, which exceeds the available size-limited solver licence;
+reproducing it was outside the scope of this assignment. See `NOTES.md` §7.
