@@ -127,3 +127,49 @@ function add_delays!(m::Model, network::Symbol)
 
     return m
 end
+
+# Warm start for the delay model.
+#
+# Juniper branches on roughly 1344 binaries over 24 hours and, left to find its
+# own first incumbent, runs out of time with only a dual bound. It does not
+# have to: the solution of the SAME model with the delays switched off is
+# always feasible for the delay model. That version forces
+# mf*dt >= rho*pi*R^2*L at every step, which is exactly the condition for
+# Eq. (6) to return tau = 0, so the whole dispatch carries over with every
+# delay set to zero.
+#
+# Giving the solver that point costs one cheap extra solve and turns "no
+# feasible solution found" into a real answer with a bound around it.
+function warm_start_from!(m::Model, src::Model)
+    for key in (:mfS, :mfR, :prS, :prR, :TS, :TR, :TSin, :TSout, :TRin, :TRout,
+                :mfHS, :mfHES, :Q, :P, :LHP, :Lpump, :theta)
+        haskey(m.ext[:variables], key) && haskey(src.ext[:variables], key) || continue
+        dst = m.ext[:variables][key]
+        val = value.(src.ext[:variables][key])
+        for i in eachindex(dst)
+            set_start_value(dst[i], val[i])
+        end
+    end
+
+    # The delay variables themselves: tau = 0, so every u is 1 (a pipe volume
+    # clears within one step, and a fortiori within sigma+1 of them), v selects
+    # sigma = 0, and Ttilde carries the undelayed, uncooled inlet temperature.
+    T = m.ext[:sets][:T]; IP = m.ext[:sets][:IP]; taumax = m.ext[:parameters][:taumax]
+    for tag in ("S", "R")
+        u = get(m.ext[:variables], Symbol("u$tag"), nothing)
+        u === nothing && continue
+        v = m.ext[:variables][Symbol("v$tag")]
+        Ttil = m.ext[:variables][Symbol("Ttil$tag")]
+        tau = m.ext[:variables][Symbol("tau$tag")]
+        Tin = value.(src.ext[:variables][tag == "S" ? :TSin : :TRin])
+        for pp in IP, t in T
+            set_start_value(tau[pp, t], 0.0)
+            for s in 0:taumax[pp]
+                set_start_value(u[(pp, t, s)], 1.0)
+                set_start_value(v[(pp, t, s)], s == 0 ? 1.0 : 0.0)
+                set_start_value(Ttil[(pp, t, s)], s == 0 ? Tin[pp, t] : 0.0)
+            end
+        end
+    end
+    return m
+end

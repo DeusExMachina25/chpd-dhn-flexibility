@@ -469,3 +469,44 @@ difference carries at most `c*300*90 = 113.8 MW` - against a 111 MW heat load
 at hour 20. The network is genuinely close to binding, which forces the more
 expensive CHP on and is a real effect the CED cannot see. Whether the 24-hour
 picture reverses, as the paper reports, needs the full run.
+
+### Working around the licence: SCIP, then Juniper
+
+The size-limited Gurobi licence caps the delay model at 6 hours, so the 24-hour
+run needs a solver without a size cap. What is required is one that handles
+**integers together with nonlinearity**, which rules out most of the free
+options individually:
+
+| solver | integers | nonlinear constraints | usable here |
+|---|---|---|---|
+| Ipopt | no | yes | no |
+| HiGHS | yes | no (linear/quadratic objective only) | no |
+| Clarabel | no | conic | no |
+| SCIP | yes | yes, incl. non-convex | crashes, see below |
+| Juniper | yes | yes, via Ipopt per node | **yes** |
+
+SCIP was tried first and is the right answer on paper: it does spatial branch
+and bound, so it covers the non-convex Section II as well as the MISOCP of
+Section III-B. On this machine its Windows binary **segfaults inside
+`optimize!`** — not on our model, on a two-variable MILP. It loads and
+constructs an optimizer fine, then dies during solve. It was removed from
+`Project.toml` rather than left as a broken dependency.
+
+Juniper is the working alternative. It is pure Julia, so there is no native
+binary to go wrong, and it branches on the integers with Ipopt solving the
+continuous problem at each node. `safe_optimize!` catches Gurobi's
+`Error 10010` and retries with it automatically, announcing the switch.
+
+**This changes what the two objectives mean, and the report has to say so:**
+
+- **Section III-B is convex** once the integers are fixed, so branch and bound
+  with a convex NLP at each node returns a genuine global optimum of the
+  MISOCP. Nothing is lost.
+- **Section II is not convex**, so Juniper is a heuristic there. Its objective
+  is a valid *upper* bound on the true optimum, not the optimum itself.
+
+The second point makes the Section III-B lower bound *more* useful, not less:
+with Gurobi unavailable at this size, the relaxation is the only thing
+producing a certified bound on the optimal cost at all. That is a fair
+practical illustration of why the paper bothers with a relaxation, arrived at
+for a more mundane reason than theirs.

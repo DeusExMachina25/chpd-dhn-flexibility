@@ -6,7 +6,12 @@
 # At a single time step all of this is small enough to be checked by hand,
 # which is exactly why we start there.
 
-solved(m::Model) = termination_status(m) != MOI.OPTIMIZE_NOT_CALLED && has_values(m)
+# A model counts as solved only if there is an actual primal point to read.
+# has_values alone is not enough: a solver that hits its time limit with a dual
+# bound but no incumbent still reports values, and they come back as NaN.
+solved(m::Model) = termination_status(m) != MOI.OPTIMIZE_NOT_CALLED &&
+                   primal_status(m) == MOI.FEASIBLE_POINT &&
+                   isfinite(objective_value(m))
 
 # Solving can fail outright rather than just fail to converge - the usual cause
 # here is the size-limited Gurobi licence refusing a model with a few thousand
@@ -17,12 +22,23 @@ function safe_optimize!(m::Model, label::String)
         optimize!(m)
     catch err
         msg = sprint(showerror, err)
+        if occursin("size-limited", msg)
+            # The licence, not the model, is the problem. Hand it to SCIP,
+            # which has no size cap, and say so rather than doing it silently.
+            println(rpad(label, 22), " too large for the size-limited Gurobi",
+                    " licence, retrying with Juniper")
+            try
+                set_optimizer(m, uncapped_solver())
+                optimize!(m)
+            catch err2
+                println(rpad(label, 22), " FAILED TO SOLVE (Juniper)")
+                println("    ", first(split(sprint(showerror, err2), '\n')))
+                return :failed
+            end
+            return report_status(m, label * " [Juniper]")
+        end
         println(rpad(label, 22), " FAILED TO SOLVE")
         println("    ", first(split(msg, '\n')))
-        if occursin("size-limited", msg)
-            println("    -> this needs an unrestricted Gurobi licence, or a solver",
-                    " without a size cap. See README.")
-        end
         return :failed
     end
     return report_status(m, label)
@@ -31,7 +47,10 @@ end
 function report_status(m::Model, label::String)
     st = termination_status(m)
     msg = rpad(label, 22) * " status: " * string(st)
-    if solved(m)
+    if !solved(m) && st == MOI.TIME_LIMIT
+        msg *= "   no feasible point found; dual bound only: " *
+               "$(round(objective_bound(m), digits=3)) \$"
+    elseif solved(m)
         msg *= "   objective: $(round(objective_value(m), digits=3)) \$"
         # When the time limit bites the incumbent is not proven optimal, so
         # say how far the solver still had to go.

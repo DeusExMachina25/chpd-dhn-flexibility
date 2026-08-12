@@ -69,6 +69,23 @@ build_chpd_minlp!(m_minlp; delays=DELAYS)
 m_misocp = setup(convex_solver())
 build_chpd_misocp!(m_misocp; delays=DELAYS)
 
+# The delay model is hard enough that a solver can spend its whole budget
+# looking for a first feasible point. The no-delay version of the same model is
+# cheap and its solution is always feasible with every delay set to zero, so it
+# is solved first and handed over as a starting point. See warm_start_from!.
+if DELAYS
+    println("\nwarm start: solving the no-delay model first")
+    m_warm = setup(nonconvex_solver())
+    build_chpd_minlp!(m_warm; delays=false)
+    safe_optimize!(m_warm, "  no-delay warm start")
+    if solved(m_warm)
+        warm_start_from!(m_minlp, m_warm)
+        warm_start_from!(m_misocp, m_warm)
+    else
+        println("  warm start unavailable, carrying on without one")
+    end
+end
+
 m_ced = setup(lp_solver())
 build_ced!(m_ced)
 

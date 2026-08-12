@@ -11,7 +11,25 @@
 #     read as an upper bound on the optimum, not as the optimum;
 #   - the CED is a plain LP, HiGHS solves it exactly.
 
-using JuMP, Gurobi, Ipopt, HiGHS
+# The escape hatch, for when the size-limited Gurobi licence (2000 variables
+# and constraints) refuses the delay model of Eqs. (6)-(13), which it does from
+# about 8 hours onwards.
+#
+# What is needed is a solver that handles integers together with nonlinearity.
+# Ipopt does nonlinear but not integers, HiGHS does integers but not quadratic
+# constraints, Clarabel does cones but not integers. SCIP was tried first and
+# is the natural choice on paper, but its Windows binary segfaults inside
+# optimize! on this machine - even on a two-variable MILP - so it is unusable
+# here. Juniper is the working alternative: pure Julia, no native binary, and
+# it does branch and bound over the integers with Ipopt on each node.
+#
+# The distinction that matters when reading the results:
+#   - Section III-B is CONVEX once the integers are fixed, so Juniper's
+#     branch and bound returns a genuine global optimum of the MISOCP.
+#   - Section II is NOT convex, so Juniper is a heuristic there and its
+#     objective is a valid upper bound, not a certified optimum. That makes
+#     the Section III-B lower bound more important, not less.
+using JuMP, Gurobi, Ipopt, HiGHS, Juniper
 
 const HAS_GUROBI = try
     Gurobi.Env(output_flag=0)
@@ -28,6 +46,10 @@ end
 # is optimal.
 const TIMELIMIT = 600.0
 
+# Juniper gets longer: it is branch and bound written in Julia solving an NLP
+# at every node, so it is far slower per node than Gurobi and needs the room.
+const TIMELIMIT_UNCAPPED = 1800.0
+
 nonconvex_solver() = HAS_GUROBI ?
     optimizer_with_attributes(Gurobi.Optimizer, "NonConvex" => 2, "OutputFlag" => 0,
                               "TimeLimit" => TIMELIMIT) :
@@ -41,3 +63,10 @@ convex_solver() = HAS_GUROBI ?
 lp_solver() = HAS_GUROBI ?
     optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0) :
     optimizer_with_attributes(HiGHS.Optimizer, "output_flag" => false)
+
+# Used when Gurobi refuses a model for being too large.
+uncapped_solver() = optimizer_with_attributes(Juniper.Optimizer,
+    "nl_solver" => optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 0),
+    "mip_solver" => optimizer_with_attributes(HiGHS.Optimizer, "output_flag" => false),
+    "time_limit" => TIMELIMIT_UNCAPPED,
+    "log_levels" => [])
