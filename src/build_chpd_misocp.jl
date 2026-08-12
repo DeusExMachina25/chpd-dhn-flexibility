@@ -29,10 +29,11 @@ function drop_constraint!(m::Model, key::Symbol)
     return m
 end
 
-function build_chpd_misocp!(m::Model; delays::Bool=false, widen::Float64=0.0)
+function build_chpd_misocp!(m::Model; delays::Bool=false, widen::Float64=0.0,
+                            mfHScap::Union{Nothing,Float64}=nothing)
     # Build the original model first, then relax it. `widen` is the analysis
     # knob documented in build_chpd_minlp!; it defaults to no change.
-    build_chpd_minlp!(m; delays=delays, widen=widen)
+    build_chpd_minlp!(m; delays=delays, widen=widen, mfHScap=mfHScap)
 
     # Extract sets
     T = m.ext[:sets][:T]

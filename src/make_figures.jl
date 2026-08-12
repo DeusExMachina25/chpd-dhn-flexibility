@@ -92,36 +92,57 @@ end
 # Section II model is unchanged throughout, so every point is a gap against the
 # same reference.
 
-println("Sweeping the envelope box width ...")
-widens = collect(0.0:0.1:1.0)
-gaps = Float64[]
-boxw = Float64[]
+## ---------------------------------------------------------------- figure 2
+# The gap against the width of the box the envelopes are built on.
+#
+# Widening the heat-*exchanger* bounds turns out to change nothing at either
+# hour: its load-implied box is already tight enough that the Eq. (21) envelope
+# is exact at the optimum. The gap is carried instead by the heat *station*
+# envelope, Eq. (24), whose flow bound is the raw equipment limit and whose
+# worst-case slack is c*(mfhi-mflo)*(dThi-dTlo)/4 = 19 MW. So the informative
+# sweep tightens that bound rather than loosening the other one.
+#
+# The cap is only ever taken down to the flow the original model actually uses,
+# so the Section II optimum stays feasible and the relaxation stays a bound.
 
-for w in widens
+println("Sweeping the heat-station flow bound ...")
+
+mfHSopt = value.(m2.ext[:variables][:mfHS])
+opt_flow = maximum(mfHSopt[j, 1] for j in IHS)
+raw_cap = maximum(upper_bound(m2.ext[:variables][:mfHS][j, 1]) for j in IHS)
+println("  station flow at the optimum: $(round(opt_flow, digits=1)) kg/s",
+        ", equipment bound: $(round(raw_cap, digits=1)) kg/s")
+
+caps = collect(range(ceil(opt_flow), raw_cap, length=10))
+gaps = Float64[]
+slack = Float64[]
+
+for cap in caps
     mr = setup(convex_solver())
-    build_chpd_misocp!(mr; widen=w)
+    build_chpd_misocp!(mr; mfHScap=cap)
     optimize!(mr)
     zr = objective_value(mr)
 
-    mfHES = mr.ext[:variables][:mfHES]
-    i1 = first(mr.ext[:sets][:IHES])
-    width = upper_bound(mfHES[i1, 1]) - lower_bound(mfHES[i1, 1])
+    j1 = first(IHS)
+    mfv = mr.ext[:variables][:mfHS][j1, 1]
+    dTv = mr.ext[:variables][:dTHS][j1, 1]
+    # worst-case McCormick slack on Eq. (24) for this box, in MW
+    s = (upper_bound(mfv) - lower_bound(mfv)) *
+        (upper_bound(dTv) - lower_bound(dTv)) / 4 * mr.ext[:parameters][:c]
 
     push!(gaps, (z2 - zr) / z2 * 100)
-    push!(boxw, width)
-    println("  widen $(round(w, digits=1)): box $(round(width, digits=1)) kg/s",
-            " -> relaxed $(round(zr, digits=1)) \$, gap $(round(gaps[end], digits=2)) %")
+    push!(slack, s)
+    println("  cap $(round(cap, digits=1)) kg/s -> Eq.(24) slack $(round(s, digits=1))",
+            " MW, relaxed $(round(zr, digits=1)) \$, gap $(round(gaps[end], digits=3)) %")
 end
 
-fig2 = plot(boxw, gaps,
+fig2 = plot(slack, gaps,
             marker=:circle, markersize=5, linewidth=2, color=:darkorange,
             legend=false,
-            xlabel="width of the heat-exchanger flow box [kg/s]",
+            xlabel="worst-case slack the Eq. (24) envelope is allowed [MW]",
             ylabel="relaxation gap [%]",
-            title="Relaxation gap against McCormick box width, hour $HOUR",
+            title="Relaxation gap against McCormick envelope slack, hour $HOUR",
             size=(720, 380), titlefontsize=11, guidefontsize=9, tickfontsize=8,
             left_margin=5Plots.mm, bottom_margin=5Plots.mm)
-annotate!(fig2, boxw[1], gaps[1],
-          text("  load-implied bounds\n  (what the model uses)", 8, :left, :bottom))
-savefig(fig2, joinpath(outdir, "fig2_gap_vs_width_hour$HOUR.png"))
-println("  wrote fig2_gap_vs_width_hour$HOUR.png")
+savefig(fig2, joinpath(outdir, "fig2_gap_vs_slack.png"))
+println("  wrote fig2_gap_vs_slack.png")

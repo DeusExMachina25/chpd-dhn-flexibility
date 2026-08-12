@@ -8,7 +8,8 @@
 # time delay is zero everywhere, Eqs. (5)-(13) collapse into a single loss
 # factor, and no binary variables are created. That is the one-step case.
 
-function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0)
+function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0,
+                           mfHScap::Union{Nothing,Float64}=nothing)
     m.ext[:variables] = Dict()
     m.ext[:expressions] = Dict()
     m.ext[:constraints] = Dict()
@@ -133,6 +134,17 @@ function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0)
         mfHESlo = Dict(k => v - widen * (v - p[:mfHESmin][k[1]]) for (k, v) in mfHESlo)
         mfHEShi = Dict(k => v + widen * (p[:mfHESmax][k[1]] - v) for (k, v) in mfHEShi)
         mfHShi = Dict(k => v + widen * (p[:mfHSmax][k] - v) for (k, v) in mfHShi)
+    end
+
+    # `mfHScap` is the companion knob for the heat *stations*. Their flow bound
+    # comes straight from the equipment limit, and the resulting box is what
+    # actually carries the relaxation gap on this case study: the Eq. (24)
+    # envelope may sit up to c*(mfhi-mflo)*(dThi-dTlo)/4 = 19 MW off the true
+    # surface. Capping the bound tightens that box. Any cap at or above the
+    # flow the original model actually uses leaves the Section II optimum
+    # feasible, so the relaxation stays a valid lower bound.
+    if mfHScap !== nothing
+        mfHShi = Dict(k => min(v, mfHScap) for (k, v) in mfHShi)
     end
 
     mfHS = m.ext[:variables][:mfHS] = @variable(m, [j=IHS, t=T],
