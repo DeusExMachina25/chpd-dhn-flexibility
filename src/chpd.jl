@@ -8,8 +8,9 @@
 #   - Section III-B the convex relaxation (McCormick + convex quadratic)
 #   - Section IV-A  the conventional economic dispatch, as a benchmark
 #
-# Run with:  julia --project=. chpd.jl        (one time step)
-#            julia --project=. chpd.jl 3      (the first three time steps)
+# Run with:  julia --project=. src/chpd.jl                (hour 1)
+#            julia --project=. src/chpd.jl 1 from=20      (a single other hour)
+#            julia --project=. src/chpd.jl 6 from=18 delays   (with storage)
 
 ## Step 0: Activate environment - ensure consistency across computers
 # Sources live in src/, everything else is resolved relative to the project

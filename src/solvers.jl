@@ -1,34 +1,15 @@
 ## Solver selection
-# Gurobi is the natural choice here: it handles the non-convex Section II
-# directly (spatial branch and bound, NonConvex=2) and the convex quadratic
-# Section III-B, and it is the only one of the three that will cope with the
-# MISOCP once the time delay binaries are switched on.
 #
-# It needs a licence though. Without one we fall back to Ipopt and HiGHS:
-#   - Section III-B is convex, so Ipopt's local optimum is the global one and
-#     nothing is lost;
-#   - Section II is not, so its objective is a local solution and should be
-#     read as an upper bound on the optimum, not as the optimum;
-#   - the CED is a plain LP, HiGHS solves it exactly.
-
-# The escape hatch, for when the size-limited Gurobi licence (2000 variables
-# and constraints) refuses the delay model of Eqs. (6)-(13), which it does from
-# about 8 hours onwards.
+# Without a Gurobi licence we fall back to Ipopt and HiGHS. Section III-B is
+# convex, so Ipopt's local optimum is the global one; Section II is not, so its
+# objective is then only an upper bound, not the optimum.
 #
-# What is needed is a solver that handles integers together with nonlinearity.
-# Ipopt does nonlinear but not integers, HiGHS does integers but not quadratic
-# constraints, Clarabel does cones but not integers. SCIP was tried first and
-# is the natural choice on paper, but its Windows binary segfaults inside
-# optimize! on this machine - even on a two-variable MILP - so it is unusable
-# here. Juniper is the working alternative: pure Julia, no native binary, and
-# it does branch and bound over the integers with Ipopt on each node.
-#
-# The distinction that matters when reading the results:
-#   - Section III-B is CONVEX once the integers are fixed, so Juniper's
-#     branch and bound returns a genuine global optimum of the MISOCP.
-#   - Section II is NOT convex, so Juniper is a heuristic there and its
-#     objective is a valid upper bound, not a certified optimum. That makes
-#     the Section III-B lower bound more important, not less.
+# Juniper is the escape hatch for when the size-limited licence (2000 variables
+# and constraints) refuses the delay model, which happens from about 8 hours.
+# SCIP is the natural choice but its Windows binary segfaults inside optimize!
+# here, even on a two-variable MILP. Juniper is pure Julia and branches over the
+# integers with Ipopt at each node. Same caveat as above: it is global on the
+# convex Section III-B and only a heuristic on Section II.
 using JuMP, Gurobi, Ipopt, HiGHS, Juniper
 
 const HAS_GUROBI = try
@@ -39,15 +20,12 @@ catch
     false
 end
 
-# Time limit for the two hard models. Section II over 24 hours with the delay
-# binaries is a non-convex MINLP and does not close in any reasonable time -
-# which is the whole reason the paper proposes a relaxation. When the limit
-# bites we report the incumbent and the bound rather than pretending the number
-# is optimal.
+# Section II over 24 hours with the delay binaries does not close in any
+# reasonable time. When the limit bites we report the incumbent and the bound
+# rather than pretending the number is optimal.
 const TIMELIMIT = 600.0
 
-# Juniper gets longer: it is branch and bound written in Julia solving an NLP
-# at every node, so it is far slower per node than Gurobi and needs the room.
+# Juniper solves an NLP at every node, so it needs more room than Gurobi.
 const TIMELIMIT_UNCAPPED = 1800.0
 
 nonconvex_solver() = HAS_GUROBI ?

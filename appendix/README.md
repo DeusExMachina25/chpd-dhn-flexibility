@@ -36,7 +36,7 @@ ambiguous once the PDF is de-laid-out, and its load and wind profiles appear
 there only as figures.
 
 Section 6 of `../NOTES.md` records the provenance of every parameter, and the
-places where the appendix PDF and the authors' own code disagree — pressure
+places where the appendix PDF and the authors' own code disagree: pressure
 bounds, minimum heat exchanger flow, water density, and which generating units
 are present. Where they conflict, the code was followed, because it is what
 produces the published numbers.

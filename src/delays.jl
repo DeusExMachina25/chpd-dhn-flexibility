@@ -1,27 +1,21 @@
-## Eqs. (6)-(13): pipeline time delays, and the energy storage they carry
+## Eqs. (6)-(13): pipeline time delays, and the storage they carry
 #
-# This is where the flexibility in the paper actually comes from. Water pushed
-# into a pipe now arrives at the far end tau steps later, so heat produced in a
-# cheap hour can be consumed in an expensive one. tau itself is a decision, and
-# it depends on the mass flow, which is what makes the model non-convex before
-# the big-M reformulation.
-#
-# The chain is:
-#   (6)      tau is the smallest number of steps whose accumulated mass fills
-#            the pipe, rho*pi*R^2*L
-#   (7),(8)  that "smallest sigma such that" is turned into binaries u and a
-#            linear expression for tau
+# Water entering a pipe now arrives tau steps later, so heat made in a cheap
+# hour can be used in an expensive one. tau depends on the mass flow, which is
+# what the big-M reformulation below removes. The chain:
+#   (6)      tau is the fewest steps whose accumulated mass fills the pipe,
+#            rho*pi*R^2*L
+#   (7),(8)  that "smallest sigma such that" becomes binaries u plus a linear
+#            expression for tau
 #   (9)-(12) binaries v select the single sigma equal to tau, and Ttilde picks
-#            up the correspondingly delayed and cooled inlet temperature
+#            up the delayed and cooled inlet temperature
 #   (13)     the outlet temperature is the sum over sigma of Ttilde
 #
-# add_delays! is called once for the supply network and once for the return
-# network; they are structurally identical, only the variables differ.
+# Called once per network; supply and return are structurally identical.
 
-# History before the start of the horizon. The pipe is not empty at t = 1, so
-# Eq. (7) needs mass flows and Eq. (10) needs inlet temperatures for the steps
-# before it. The authors do the same: they hold the flow at its minimum and the
-# temperature at the cold end of the band.
+# The pipe is not empty at t = 1, so Eq. (7) needs flows and Eq. (10) needs
+# inlet temperatures for steps before the horizon. As the authors do, the flow
+# is held at its minimum and the temperature at the cold end of the band.
 function delay_history(m::Model, network::Symbol)
     p = m.ext[:parameters]
     IP = m.ext[:sets][:IP]

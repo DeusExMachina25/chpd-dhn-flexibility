@@ -67,13 +67,13 @@ This builds the models, solves them, and prints the validation report: objective
 values, the relaxation gap, how exact the relaxation turned out to be, and a set
 of physical checks on the solution.
 
-Everything is driven by command-line arguments — no file needs editing to change
+Everything is driven by command-line arguments, no file needs editing to change
 what is solved. A bare integer sets the number of time steps, `from=N` starts the
 horizon at hour `N`, and `delays` enables Eqs. (6)–(13).
 
 | Command | What it solves |
 |---|---|
-| `julia --project=. src/chpd.jl` | one time step at hour 1, no delays — the default |
+| `julia --project=. src/chpd.jl` | one time step at hour 1, no delays (the default) |
 | `julia --project=. src/chpd.jl 1 from=20` | one time step at hour 20, the wind-scarce hour reported in the report |
 | `julia --project=. src/chpd.jl 24` | the full 24-hour horizon, no delays |
 | `julia --project=. src/chpd.jl 6 from=18 delays` | six hours from hour 18, with pipeline storage on |
@@ -160,7 +160,7 @@ their appendix PDF and their code disagree.
 What has been established:
 
 - **The Section III-B relaxation is a valid lower bound** on Section II at every
-  horizon tested, and Eq. (36) comes out tight — the relaxed pressure loss sits on
+  horizon tested, and Eq. (36) comes out tight: the relaxed pressure loss sits on
   the original quadratic surface, because pump cost pushes it there. The remaining
   gap is entirely McCormick's, and tracks the width of the bounds the envelopes
   are built on.
@@ -176,7 +176,7 @@ What has been established:
   paper reports 3.51 % over a full day. *(extension)*
 
 With one time step the network cannot store anything, so the CHPD is expected to
-cost *more* than the CED there — it pays for water pumping, which the CED does not
+cost *more* than the CED there, because it pays for water pumping, which the CED does not
 model at all. That is not a discrepancy with the paper.
 
 The paper's full-horizon 18600 $ CHPD figure is not reproduced. It needs 24 hours

@@ -42,7 +42,7 @@ from it.
 
 ---
 
-## 2. Case study — SUPERSEDED, kept as a record
+## 2. Case study: SUPERSEDED, kept as a record
 
 > **This section describes the reconstruction used in phases 1–6, which is no
 > longer what the code runs.** Section 6 has the authors' real data. It is kept
@@ -51,7 +51,7 @@ from it.
 > numbers below as results.
 
 Reconstructed from Fig. 2 and Section IV-A. **These are not the paper's
-numbers** — the paper puts its data in the online appendix
+numbers**, the paper puts its data in the online appendix
 (doi:10.5281/zenodo.1195508), which we deliberately did not use until the model
 itself was proven. Results in this phase therefore validate the *model*, not the
 paper's results.
@@ -72,7 +72,7 @@ pipes meet, so it is the only place where the bilinear mixing equation (16) is
 actually needed. Nodes 1 and 2 have a single arriving *return* pipe, so (20)
 applies exactly there and no envelope is needed. Nodes 1 and 2 have no arriving
 supply pipe and node 3 has no arriving return pipe, so those three temperatures
-are free decision variables set by the stations — which is physically right, a
+are free decision variables set by the stations, which is physically right: a
 heat station chooses its supply temperature.
 
 Power system: 6 buses, G1 at bus 1 (reference), CHP1 at bus 2, W1 at bus 4,
@@ -95,14 +95,14 @@ HP1 at bus 5, loads at buses 3, 4 and 6.
 | Δpr min at HES | 1 bar | enough to drive flow through the exchanger |
 | heat load | 84–124 MW | shape from Fig. 3b: morning and evening peaks, midday dip |
 | electricity load | 124–224 MW | shape from Fig. 3a: daytime peak |
-| wind | 100 MW capacity, AF 0.33–0.92 | anti-correlated with the electricity load, so surplus occurs at night — that is the situation the paper's storage argument depends on |
+| wind | 100 MW capacity, AF 0.33–0.92 | anti-correlated with the electricity load, so surplus occurs at night, that is the situation the paper's storage argument depends on |
 | G1 | 150 MW, 30 $/MWh | marginal thermal unit |
 | CHP1 | ηE 0.35, ηH 0.45, r 0.15, F̄ 500 MW, 12 $/MWh_fuel | typical extraction unit |
 | HP1 | 25 MW electric, COP 2.6–3.3 | COP varies with ambient temperature, lowest at night |
 
 Sanity of the scale: at nominal conditions the heat load of ~100 MW needs
 `mf = Q/(c·ΔT) = 100/(4.182e-3 · 40) ≈ 600 kg/s`, which at 0.36 m radius is
-about 1.5 m/s — a realistic DH transmission velocity. Pump consumption comes
+about 1.5 m/s, a realistic DH transmission velocity. Pump consumption comes
 out below 1 MW against a 200 MW power system, which is also the right order of
 magnitude.
 
@@ -120,14 +120,14 @@ delay variables τ of (6) can only be zero, so (6)–(13) and their binaries
 collapse.
 
 **Corrected in phase 7:** at τ = 0 the loss bracket of (5) is exactly 1, so
-there is no thermal loss at all — not the `T_out = T_in · (1 − 2μΔt/(ρ c R))`
+there is no thermal loss at all, and not the `T_out = T_in · (1 − 2μΔt/(ρ c R))`
 that was written here first. See §6. Zero delay also has to be *earned*: it
 requires `mf·Δt ≥ ρπR²L`, which is now imposed.
 
 Consequence, and it matters for reading the results: **with one step the DHN
 has no storage**. The whole benefit the paper reports comes from shifting heat
 production in time. So at one step the CHPD should cost slightly *more* than
-the CED, not less — it pays for pump electricity and pipe heat losses that the
+the CED, not less: it pays for pump electricity and pipe heat losses that the
 CED simply does not model. The paper's 3.51 % saving is a 24-hour effect and
 must not be expected here.
 
@@ -165,7 +165,7 @@ with an hourly availability cap, so curtailment is free and shows up as
 
 McCormick tightness is entirely determined by the variable bounds it is given.
 The envelope for (21) and (24) is built on the *temperature difference* as a
-single variable rather than on `TS` and `TR` separately — one product instead
+single variable rather than on `TS` and `TR` separately, one product instead
 of two, and a much narrower interval. Where equations (19)/(20) apply, the
 bilinear constraint is dropped entirely rather than relaxed, because those are
 exact.
@@ -174,7 +174,7 @@ exact.
 
 ## 4. Problems hit and how they were handled
 
-*(filled in as they come up — this section feeds the "challenges" part of the
+*(filled in as they come up; this section feeds the "challenges" part of the
 report)*
 
 - **Gurobi licence.** Gurobi 11.0 was installed but initially unlicensed
@@ -202,7 +202,7 @@ report)*
   physical limits of the equipment (`mfHES` anywhere in 40–1600 kg/s) while the
   actual flows sit near 600 kg/s. For `w = x*y` on a box, the McCormick hull
   can sit as far as `(xhi-xlo)*(yhi-ylo)/4` from the true surface, which for
-  those bounds is 83 MW of slack on a 98 MW load — the relaxation could pretend
+  those bounds is 83 MW of slack on a 98 MW load, so the relaxation could pretend
   to serve the load without moving any water.
 
   Two rounds of tightening, both rigorous:
@@ -220,7 +220,7 @@ report)*
   `report_envelope_widths` in `results.jl` prints the worst-case slack each
   envelope is allowed, which is what made the diagnosis quick.
 
-  23 % is still loose, and no amount of box tightening fixes that — plain
+  23 % is still loose, and no amount of box tightening fixes that: plain
   McCormick is a single linear hull over a wide box. Closing it further needs
   piecewise McCormick (partition the mass flow range, one binary per segment),
   which is the standard remedy and would make the one-step problem a genuine
@@ -229,7 +229,7 @@ report)*
 
 ---
 
-## 5. One-step results — SUPERSEDED, kept as a record
+## 5. One-step results: SUPERSEDED, kept as a record
 
 > **Run on the reconstructed data of §2 and with the Eq. (5) bug described in
 > §6.** The relaxation-gap story and the test narrative below still stand; the
@@ -250,7 +250,7 @@ Reconstructed data, `t = 1`, no time delays. `julia --project=. chpd.jl`.
 at worst, i.e. it holds with equality at the optimum. This is expected rather
 than lucky: pump cost (27) is increasing in the pressure difference, so the
 objective pushes the constraint down onto the original quadratic surface. The
-convex quadratic part of III-B costs nothing in accuracy here — all of the gap
+convex quadratic part of III-B costs nothing in accuracy here: all of the gap
 comes from the McCormick side.
 
 **Physical checks on the Section II solution** all close at machine precision:
@@ -261,14 +261,14 @@ region, heat pump exactly on `Q = COP*LHP`, worst line at 36.8 % of its limit.
 **CHPD vs CED: 3390.43 $ against 3204.32 $, i.e. the CHPD costs 5.81 % *more*.**
 This is the expected result at a single time step and not a contradiction of
 the paper. The DHN's value is storage, and one period has nowhere to store
-anything; what remains is the cost the CED ignores — water pumping (0.146 MW)
+anything; what remains is the cost the CED ignores: water pumping (0.146 MW)
 and 6.655 MW of pipe heat losses. The paper's 3.51 % saving is a 24-hour
 effect that only appears once the pipeline can be charged and discharged, so it
 cannot be reproduced or expected here. Reproducing it is Phase 7.
 
 ### Tests
 
-`julia --project=. test/runtests.jl` — 14 tests, all passing:
+`julia --project=. test/runtests.jl` runs 14 tests, all passing:
 
 - `mccormick!` reproduces a known bilinear product exactly at the corners of
   the box and brackets it in the interior.
@@ -488,7 +488,7 @@ options individually:
 SCIP was tried first and is the right answer on paper: it does spatial branch
 and bound, so it covers the non-convex Section II as well as the MISOCP of
 Section III-B. On this machine its Windows binary **segfaults inside
-`optimize!`** — not on our model, on a two-variable MILP. It loads and
+`optimize!`**, and not on our model but, on a two-variable MILP. It loads and
 constructs an optimizer fine, then dies during solve. It was removed from
 `Project.toml` rather than left as a broken dependency.
 

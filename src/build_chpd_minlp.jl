@@ -64,11 +64,9 @@ function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0,
     ##### Create variables
     # Mass flow rates in the pipes, bounded by Eq. (1).
     #
-    # With the delays switched off we are asserting tau = 0, and Eq. (6) only
-    # allows that if a whole pipe volume is pushed through within one time
-    # step, i.e. mf*dt >= rho*pi*R^2*L. Without this the "no delay" assumption
-    # is not consistent with the model it came from. The bound is only applied
-    # in the no-delay case; with delays on, Eq. (6) handles it properly.
+    # Asserting tau = 0 is only consistent with Eq. (6) if a whole pipe volume
+    # clears within one step, i.e. mf*dt >= rho*pi*R^2*L. With delays on,
+    # Eq. (6) handles this itself.
     mffill = Dict(pp => p[:rho] * pi * p[:R][pp]^2 * p[:L][pp] / p[:dt] for pp in IP)
     mfSlo = Dict(pp => delays ? p[:mfSmin][pp] : max(p[:mfSmin][pp], mffill[pp]) for pp in IP)
     mfRlo = Dict(pp => delays ? p[:mfRmin][pp] : max(p[:mfRmin][pp], mffill[pp]) for pp in IP)
@@ -108,14 +106,12 @@ function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0,
 
     # Mass flow rates at the stations, bounded by Eqs. (26) and (22).
     #
-    # The bounds in the data file are the physical limits of the equipment, but
-    # (21) and (24) imply much narrower ones: a station moving heat X across a
-    # temperature difference that (18) confines to [dTlo, dThi] can only be
-    # running a flow between X/(c*dThi) and X/(c*dTlo). Since the heat load is
-    # known, that pins the heat exchanger flow to a narrow band. These bounds
-    # are valid for the original model too - they are implied by its own
-    # constraints - but they matter most for the relaxation, whose envelopes
-    # are only as tight as the box they are built on.
+    # The data file holds equipment limits, but (21) and (24) imply much
+    # narrower ones: moving heat X across a dT that (18) confines to
+    # [dTlo, dThi] needs a flow between X/(c*dThi) and X/(c*dTlo). The heat
+    # load is known, so this pins the exchanger flow to a narrow band. Valid
+    # for the original model too, but it matters most for the relaxation,
+    # whose envelopes are only as tight as their box.
     dTlo(n) = p[:TSmin][n] - p[:TRmax][n]
     dThi(n) = p[:TSmax][n] - p[:TRmin][n]
 
@@ -124,12 +120,11 @@ function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0,
     mfHShi = Dict(j => min(p[:mfHSmax][j], p[:Qmax][j] / (c * dTlo(HSnode[j]))) for j in IHS)
 
     # `widen` is an analysis knob, not part of the model: it relaxes the
-    # load-implied bounds above back towards the raw equipment limits, so that
-    # the relaxation gap can be measured as a function of the width of the box
-    # the McCormick envelopes are built on. widen = 0 changes nothing (the
-    # default, and what every reported result uses); widen = 1 restores the
-    # equipment limits. Used by src/make_figures.jl. The bounds stay valid for
-    # the original model at any setting, since widening only ever admits more.
+    # load-implied bounds back towards the equipment limits so the gap can be
+    # measured against box width. 0 changes nothing (the default, and what
+    # every reported result uses), 1 restores the equipment limits. Used by
+    # src/make_figures.jl. Valid at any setting, since widening only admits
+    # more.
     if widen > 0
         mfHESlo = Dict(k => v - widen * (v - p[:mfHESmin][k[1]]) for (k, v) in mfHESlo)
         mfHEShi = Dict(k => v + widen * (p[:mfHESmax][k[1]] - v) for (k, v) in mfHEShi)
@@ -192,17 +187,14 @@ function build_chpd_minlp!(m::Model; delays::Bool=false, widen::Float64=0.0,
 
     # Eq. (5) with zero time delay.
     #
-    # The loss bracket in (5) is (1 - 2*mu*tau*dt/(rho*c*R)), and it is
-    # multiplied by the delay tau. At tau = 0 the bracket is exactly 1, so the
-    # water crosses the pipe within one time step and is charged NO thermal
-    # loss at all. An earlier version of this charged a full step of loss here,
-    # which is wrong and, on the paper's own data, infeasible: two pipes in
-    # series each lose 4.27 % of the absolute temperature, which drops a
-    # 393.15 K supply to 360.3 K, below the 363.15 K floor of Eq. (18).
+    # The loss bracket (1 - 2*mu*tau*dt/(rho*c*R)) is multiplied by tau, so at
+    # tau = 0 it is exactly 1 and the pipe loses nothing. Charging a full step
+    # of loss here instead is wrong, and on the authors' data infeasible: two
+    # pipes in series each lose 4.27 % of absolute temperature, dropping a
+    # 393.15 K supply to 360.3 K, under the 363.15 K floor of Eq. (18).
     #
-    # Losing nothing over a pipe is obviously not physical. It is an artefact
-    # of discretising the delay into whole time steps, and it is what the model
-    # in the paper says. See NOTES.md.
+    # Losing nothing is of course unphysical. It is an artefact of discretising
+    # the delay into whole steps, and it is what the paper says. See NOTES.md.
     if delays
         # Eqs. (6)-(13) replace (5) with the full delay model. See delays.jl.
         add_delays!(m, :supply)

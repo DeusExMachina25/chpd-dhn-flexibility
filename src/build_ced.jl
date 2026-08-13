@@ -4,9 +4,8 @@
 # balance (31) loses its water pump term and becomes (39). The CHP and heat
 # pump characteristics and the power system constraints are untouched.
 #
-# Because there is no network, heat produced in an hour has to be consumed in
-# the same hour: this model has no storage, which is exactly the flexibility
-# the CHPD is supposed to unlock.
+# With no network, heat produced in an hour must be consumed in that hour, so
+# this model has no storage. That is the flexibility the CHPD is meant to add.
 
 function build_ced!(m::Model)
     m.ext[:variables] = Dict()
